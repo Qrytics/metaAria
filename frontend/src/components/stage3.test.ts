@@ -2,11 +2,17 @@ import { describe, expect, it } from "vitest";
 import {
   blobsToPads,
   CAMPAD_ZONES,
+  holdProgress,
   initialBlobs,
+  MOTION_FIRE_THRESHOLD,
+  OVERDRIVE_HOLD_MS,
   overdrivePose,
   PAD_FIRE_COOLDOWN_MS,
+  padsAboveThreshold,
+  raisedHandsFromEnergies,
   stepBlobs,
   zoneAt,
+  type PadEnergies,
 } from "./campad";
 import {
   DIRECTOR_PRESETS,
@@ -115,6 +121,48 @@ describe("director steps", () => {
     for (const p of DIRECTOR_PRESETS) {
       expect(p.length).toBeLessThanOrEqual(42);
     }
+  });
+});
+
+describe("local motion energies (CAM tracker)", () => {
+  const quiet: PadEnergies = { Q: 0.01, E: 0.02, S: 0.0, Z: 0.01, C: 0.0 };
+
+  it("fires only pads above the motion threshold", () => {
+    expect(padsAboveThreshold(quiet)).toEqual([]);
+    const energies: PadEnergies = { ...quiet, Q: 0.5, C: 0.3 };
+    expect(padsAboveThreshold(energies).sort()).toEqual(["C", "Q"]);
+    // Sensitivity slider just moves the threshold.
+    expect(padsAboveThreshold(energies, 0.6)).toEqual([]);
+  });
+
+  it("defaults to a threshold strict enough to ignore sensor noise", () => {
+    expect(MOTION_FIRE_THRESHOLD).toBeGreaterThanOrEqual(0.1);
+    expect(padsAboveThreshold({ ...quiet, Q: 0.09 })).toEqual([]);
+  });
+
+  it("needs BOTH upper zones hot for the raised-hands pose", () => {
+    expect(raisedHandsFromEnergies(quiet)).toBe(false);
+    expect(
+      raisedHandsFromEnergies({ ...quiet, Q: 0.9, E: 0.05 }),
+    ).toBe(false);
+    expect(
+      raisedHandsFromEnergies({ ...quiet, Q: 0.9, E: 0.9 }),
+    ).toBe(true);
+    // Waving low (Z/C) never arms overdrive.
+    expect(
+      raisedHandsFromEnergies({ ...quiet, Z: 0.9, C: 0.9 }),
+    ).toBe(false);
+  });
+
+  it("hold-to-arm progress clamps and completes at the hold window", () => {
+    expect(holdProgress(-50)).toBe(0);
+    expect(holdProgress(0)).toBe(0);
+    expect(holdProgress(OVERDRIVE_HOLD_MS / 2, OVERDRIVE_HOLD_MS)).toBeCloseTo(
+      0.5,
+    );
+    expect(holdProgress(OVERDRIVE_HOLD_MS, OVERDRIVE_HOLD_MS)).toBe(1);
+    expect(holdProgress(OVERDRIVE_HOLD_MS * 9, OVERDRIVE_HOLD_MS)).toBe(1);
+    expect(OVERDRIVE_HOLD_MS).toBeGreaterThanOrEqual(500);
   });
 });
 

@@ -92,12 +92,69 @@ export function blobsToPads(
 /** Minimum ms between two air-pad fires on the same pad. */
 export const PAD_FIRE_COOLDOWN_MS = 250;
 
+/** How long an air-pad press stays held (ms) so hold notes can register. */
+export const PAD_HOLD_MS = 120;
+
 /**
  * Fire a pad hit through the REAL keyboard path the engine listens on
  * (`window` keydown/keyup), so air-pad hits judge exactly like key presses.
+ * The key stays down for PAD_HOLD_MS (a real tap duration) instead of
+ * releasing synchronously, which previously killed hold notes instantly and
+ * never lit the receptor flash.
  */
-export function firePadHit(pad: PumpPad): void {
+export function firePadHit(pad: PumpPad, holdMs: number = PAD_HOLD_MS): void {
   const key = pad.toLowerCase();
-  window.dispatchEvent(new KeyboardEvent("keydown", { key }));
-  window.dispatchEvent(new KeyboardEvent("keyup", { key }));
+  window.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true }));
+  window.setTimeout(() => {
+    window.dispatchEvent(new KeyboardEvent("keyup", { key, bubbles: true }));
+  }, Math.max(0, holdMs));
+}
+
+/* --- Local motion tracker (CAM mode): energies -> pads/pose --------------- */
+
+/** Per-pad motion energy in 0..1 from the frame-differencing tracker. */
+export type PadEnergies = Record<PumpPad, number>;
+
+/** Default energy a zone must exceed to fire (slider-adjustable). */
+export const MOTION_FIRE_THRESHOLD = 0.18;
+
+/** Both-hands-up must be held this long to arm Overdrive (anti-flutter). */
+export const OVERDRIVE_HOLD_MS = 700;
+
+/** Pads whose motion energy exceeds the fire threshold. */
+export function padsAboveThreshold(
+  energies: PadEnergies,
+  threshold: number = MOTION_FIRE_THRESHOLD,
+): PumpPad[] {
+  const out: PumpPad[] = [];
+  for (const z of CAMPAD_ZONES) {
+    if ((energies[z.pad] ?? 0) >= threshold) {
+      out.push(z.pad);
+    }
+  }
+  return out;
+}
+
+/**
+ * Raised-hands pose from motion energies: BOTH upper zones (Q + E) hot.
+ * Low-zone waving (Z/C/S) never counts, so footwork can't arm Overdrive.
+ */
+export function raisedHandsFromEnergies(
+  energies: PadEnergies,
+  threshold: number = MOTION_FIRE_THRESHOLD,
+): boolean {
+  return (
+    (energies.Q ?? 0) >= threshold && (energies.E ?? 0) >= threshold
+  );
+}
+
+/** Hold-to-arm progress 0..1 for a sustained pose of `heldMs`. */
+export function holdProgress(
+  heldMs: number,
+  requiredMs: number = OVERDRIVE_HOLD_MS,
+): number {
+  if (requiredMs <= 0) {
+    return 1;
+  }
+  return Math.min(1, Math.max(0, heldMs / requiredMs));
 }

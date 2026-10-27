@@ -480,6 +480,29 @@ body {
   background: #05070c;
 }
 
+/* CAM tracker: live motion meter with a threshold marker. */
+.campad-meter {
+  position: relative;
+  height: 10px;
+  background: #05070c;
+  border: 1px solid var(--edge);
+  margin-top: 8px;
+  overflow: hidden;
+}
+
+.campad-meter-fill {
+  height: 100%;
+  background: var(--cyn);
+}
+
+.campad-meter-threshold {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--amber);
+}
+
 .director-presets {
   display: flex;
   flex-direction: column;

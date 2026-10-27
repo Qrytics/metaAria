@@ -138,7 +138,9 @@ Director:
 
 Camera pad:
 
-- [ ] CamPadOverlay `SIM` replays scripted motion. `CAM` needs a webcam grant; both hands raised triggers Overdrive 2x. (No camera? Skip — `SIM` covers the path.)
+- [ ] CamPadOverlay `SIM` replays scripted motion. `CAM` needs a webcam grant: the mirror preview goes `LIVE`, waving inside a zone fires that pad, and holding both hands in the TOP CORNERS fills the bar and arms Overdrive 2x (keep them up to hold it). (No camera? Skip — `SIM` covers the path.)
+- [ ] With 2+ cameras (FaceTime + Continuity), the CAMERA picker lists both. If the room is noisy, hit CALIBRATE while still (or drag SENSITIVITY) until the meter idles below the amber marker.
+- [ ] `AI VERIFY` takes one SAM 3.1 snapshot (mock `$0` in `dev`) whose boxes linger on the preview; it is a second opinion only — the live tracker needs no backend.
 
 Stage art:
 
