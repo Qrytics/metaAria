@@ -32,6 +32,8 @@ export interface ScoreState {
   counts: JudgmentCounts;
   combo: number;
   maxCombo: number;
+  /** Arcade points. Doubled while Overdrive (2x Star Power) is active. */
+  points: number;
 }
 
 export function createScoreState(): ScoreState {
@@ -39,11 +41,19 @@ export function createScoreState(): ScoreState {
     counts: { PERFECT: 0, GREAT: 0, GOOD: 0, MISS: 0 },
     combo: 0,
     maxCombo: 0,
+    points: 0,
   };
 }
 
-/** Register one judged hit. MISS resets the combo; anything else extends it. */
-export function registerJudgment(state: ScoreState, judgment: Judgment): void {
+/**
+ * Register one judged hit. MISS resets the combo; anything else extends it.
+ * `multiplier` is the Overdrive score multiplier (2 while a pose holds it).
+ */
+export function registerJudgment(
+  state: ScoreState,
+  judgment: Judgment,
+  multiplier = 1,
+): void {
   state.counts[judgment] += 1;
   if (judgment === "MISS") {
     state.combo = 0;
@@ -53,6 +63,7 @@ export function registerJudgment(state: ScoreState, judgment: Judgment): void {
   if (state.combo > state.maxCombo) {
     state.maxCombo = state.combo;
   }
+  state.points += JUDGMENT_WEIGHTS[judgment] * 300 * multiplier;
 }
 
 const JUDGMENT_WEIGHTS: Record<Judgment, number> = {

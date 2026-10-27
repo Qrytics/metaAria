@@ -76,6 +76,12 @@ export function CriticInspector({ onChart }: CriticInspectorProps): React.JSX.El
       >
         {busy ? "GENERATING..." : "GENERATE CHART"}
       </button>
+      {audioPath.trim() === "" && (
+        <div className="dim" style={{ marginTop: 6 }}>
+          Enter a server-side audio path to arm GENERATE — the button stays
+          off until then, even after a failed run elsewhere.
+        </div>
+      )}
       {error !== null && <div className="alert">{error}</div>}
       {attempts !== null && (
         <div className="kv">

@@ -6,6 +6,9 @@ export default defineConfig({
   server: {
     proxy: {
       "/charts": "http://127.0.0.1:8000",
+      "/vision": "http://127.0.0.1:8000",
+      "/director": "http://127.0.0.1:8000",
+      "/stage": "http://127.0.0.1:8000",
     },
   },
 });

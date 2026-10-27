@@ -31,6 +31,8 @@ export function VerdictStrip({
       <span className="t-good">g:{counts?.GOOD ?? 0}</span>
       <span className="t-miss">M:{counts?.MISS ?? 0}</span>
       <span className="t-combo">x{snap?.score.combo ?? 0}</span>
+      <span>PTS:{Math.round(snap?.score.points ?? 0)}</span>
+      {snap?.overdrive === true && <span className="t-overdrive">OVERDRIVE x2</span>}
       <span>{(acc * 100).toFixed(1)}%</span>
       <span className="verdict-last">
         {playing ? (snap?.lastJudgment ?? "--") : "READY"}
@@ -83,6 +85,12 @@ export function TelemetryPanel({
         <div className="meter">
           <span className="meter-label">MAX COMBO</span>
           <span className="meter-value">{snap?.score.maxCombo ?? 0}</span>
+        </div>
+        <div className="meter">
+          <span className="meter-label">POINTS</span>
+          <span className="meter-value t-combo">
+            {Math.round(snap?.score.points ?? 0)}
+          </span>
         </div>
         <div className="meter">
           <span className="meter-label">ACCURACY</span>

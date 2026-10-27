@@ -140,6 +140,21 @@ body {
   background: #000;
   border: 2px solid #1e2635;
   padding: 6px;
+  position: relative;
+}
+
+/* Baked CRT texture over the highway: scanlines + vignette, no motion. */
+.cab-screen-bezel::after {
+  content: "";
+  position: absolute;
+  inset: 6px;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    0deg,
+    rgba(255, 255, 255, 0.025) 0 1px,
+    transparent 1px 3px
+  );
+  box-shadow: inset 0 0 90px rgba(0, 0, 0, 0.75);
 }
 
 .highway {
@@ -438,4 +453,120 @@ body {
   font-size: 11px;
   padding: 8px;
   word-break: break-word;
+}
+
+/* Stage 3: SAM cam-pad, director, reactive stage. */
+
+.t-overdrive {
+  color: var(--amber);
+  font-weight: 700;
+}
+
+.campad-frame {
+  width: 100%;
+  height: auto;
+  display: block;
+  background: #000;
+  border: 1px solid var(--edge);
+}
+
+.campad-masks {
+  width: 100%;
+  height: auto;
+  display: block;
+  margin-top: -2px;
+  border: 1px solid var(--edge);
+  border-top: 0;
+  background: #05070c;
+}
+
+.director-presets {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.hw-btn.preset {
+  text-align: left;
+  font-size: 11px;
+  letter-spacing: 0.5px;
+  text-transform: none;
+}
+
+.hw-btn.preset[aria-pressed="true"] {
+  border-color: var(--cyn);
+  color: var(--cyn);
+}
+
+.hw-btn.mic {
+  border-color: var(--red);
+  color: var(--red);
+}
+
+.hw-btn.mic.live {
+  background: #2a0e0e;
+  box-shadow: inset 0 0 12px var(--red);
+}
+
+.director-steps {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+}
+
+.director-step {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  letter-spacing: 1px;
+  color: var(--dim);
+  padding: 4px 0;
+  border-bottom: 1px dotted #222b3a;
+}
+
+.director-step[data-status="active"] {
+  color: var(--amber);
+}
+
+.director-step[data-status="done"] {
+  color: var(--grn);
+}
+
+.director-step[data-status="error"] {
+  color: var(--red);
+}
+
+.director-jacket {
+  margin-top: 8px;
+  border: 1px solid var(--edge);
+}
+
+.director-jacket svg {
+  width: 100%;
+  max-height: 220px;
+  height: auto;
+  display: block;
+  margin: 0 auto;
+}
+
+.stage-backdrop svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.stage-backdrop[data-playing="true"] {
+  animation: beat-pulse var(--beat, 0.5s) ease-in-out infinite;
+}
+
+@keyframes beat-pulse {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stage-backdrop[data-playing="true"] {
+    animation: none;
+  }
 }

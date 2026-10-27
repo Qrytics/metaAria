@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { validateChart } from "./api";
+import { validateChart, type StageArtResult } from "./api";
+import { CamPadOverlay } from "./components/CamPadOverlay";
+import { DirectorPanel } from "./components/DirectorPanel";
 import { HighwayCanvas } from "./components/HighwayCanvas";
 import {
   VocalHighway,
@@ -32,10 +34,12 @@ export function App(): React.JSX.Element {
   const [report, setReport] = useState<CriticReport | null>(null);
   const [validating, setValidating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [stageArt, setStageArt] = useState<StageArtResult | null>(null);
   const engineRef = useRef<RhythmEngine | null>(null);
   const [vocalMode, setVocalMode] = useState<"sim" | "mic" | "off">("sim");
   const [micError, setMicError] = useState<string | null>(null);
   const [vocalStats, setVocalStats] = useState<VocalStats | null>(null);
+  const [runId, setRunId] = useState(0);
   const micRef = useRef<LivePitchDetector | null>(null);
 
   // Same AudioContext master clock the pad highway reads — one clock, no drift.
@@ -91,6 +95,7 @@ export function App(): React.JSX.Element {
     setReport(null);
     setError(null);
     setVocalStats(null);
+    setStageArt(null);
   };
 
   const runValidator = async (): Promise<void> => {
@@ -112,6 +117,12 @@ export function App(): React.JSX.Element {
     setChart(next);
     setSnap(null);
     setReport(rep);
+  };
+
+  const replay = (): void => {
+    setSnap(null);
+    setRunId((i) => i + 1);
+    setPlaying(true);
   };
 
   const mode: ChartMode = chart.mode;
@@ -158,7 +169,50 @@ export function App(): React.JSX.Element {
               </span>
             </div>
           </section>
+          {stageArt !== null && (
+            <section className="panel" aria-label="Reactive stage background">
+              <header className="panel-head">
+                STAGE BACKDROP · {stageArt.mock ? "MOCK SVG $0" : "MUSE IMAGE"}
+              </header>
+              <div
+                className="stage-backdrop"
+                data-playing={playing}
+                style={{ ["--beat" as string]: `${60 / chart.bpm}s` }}
+                aria-label="Beat-reactive stage background"
+                dangerouslySetInnerHTML={{ __html: stageArt.background_svg }}
+              />
+            </section>
+          )}
+          {snap?.finished === true && playing && (
+            <section className="panel results" aria-label="Chart complete results">
+              <header className="panel-head">CHART COMPLETE</header>
+              <div className="telemetry-grid">
+                <div className="meter">
+                  <span className="meter-label">MAX COMBO</span>
+                  <span className="meter-value t-combo">{snap.score.maxCombo}</span>
+                </div>
+                <div className="meter">
+                  <span className="meter-label">POINTS</span>
+                  <span className="meter-value t-combo">
+                    {Math.round(snap.score.points)}
+                  </span>
+                </div>
+                <div className="meter">
+                  <span className="meter-label">JUDGED</span>
+                  <span className="meter-value">
+                    {snap.judged}/{snap.total}
+                  </span>
+                </div>
+              </div>
+              <div className="transport" style={{ marginTop: 8 }}>
+                <button type="button" className="hw-btn lit" onClick={replay}>
+                  PLAY AGAIN
+                </button>
+              </div>
+            </section>
+          )}
           <HighwayCanvas
+            key={runId}
             chart={chart}
             playing={playing}
             speed={speed}
@@ -253,6 +307,12 @@ export function App(): React.JSX.Element {
             </div>
           </section>
           <TelemetryPanel snap={snap} playing={playing} />
+          <CamPadOverlay
+            chartMode={mode}
+            onOverdriveChange={(active) => {
+              engineRef.current?.setOverdrive(active);
+            }}
+          />
         </div>
         <div>
           <ChartPanel
@@ -264,6 +324,12 @@ export function App(): React.JSX.Element {
             onValidate={() => void runValidator()}
           />
           <CriticInspector onChart={onGenerated} />
+          <DirectorPanel
+            chart={chart}
+            grid={grid}
+            onChart={onGenerated}
+            onStageArt={setStageArt}
+          />
         </div>
       </div>
     </div>

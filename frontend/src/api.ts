@@ -47,3 +47,106 @@ export interface GenerateParams {
 export function generateChart(params: GenerateParams): Promise<GenerateResult> {
   return postJson<GenerateResult>("/charts/generate", params);
 }
+
+/* Stage 3: SAM 3.1 air-pad, Voice Director, Muse Image stage. */
+
+export interface SamBox {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  label: string;
+}
+
+export interface SamMask {
+  label: string;
+  polygon: Array<[number, number]>;
+  confidence: number;
+}
+
+export interface SamHitZone {
+  pad: string;
+  triggered: boolean;
+  confidence: number;
+}
+
+export interface SamSegmentResult {
+  boxes: SamBox[];
+  masks: SamMask[];
+  hit_zones: SamHitZone[];
+  overdrive_active: boolean;
+  mock: boolean;
+  model: string;
+}
+
+/** Track hands/body in a frame; masks map to 5-pad + Overdrive triggers. */
+export function samSegment(
+  prompt: string,
+  mode: ChartMode,
+  image_b64?: string,
+): Promise<SamSegmentResult> {
+  return postJson<SamSegmentResult>("/vision/sam-segment", {
+    prompt,
+    mode,
+    image_b64: image_b64 ?? null,
+  });
+}
+
+export interface VoiceRemixResult {
+  chart: Chart;
+  report: CriticReport;
+  attempts: number;
+  command: string;
+  diff_log: string[];
+}
+
+/** Remix the active chart from a typed director command (or server audio). */
+export function voiceRemix(
+  chart: Chart,
+  onset_times_ms: number[],
+  command_text?: string,
+  audio_path?: string,
+): Promise<VoiceRemixResult> {
+  return postJson<VoiceRemixResult>("/director/voice-remix", {
+    chart,
+    onset_times_ms,
+    command_text: command_text ?? null,
+    audio_path: audio_path ?? null,
+  });
+}
+
+/** Upload a recorded mic blob; returns a server-side path for voice-remix. */
+export async function uploadDirectorAudio(blob: Blob): Promise<string> {
+  const form = new FormData();
+  form.append("file", blob, "director.webm");
+  const res = await fetch("/director/upload-audio", {
+    method: "POST",
+    body: form,
+  });
+  if (!res.ok) {
+    throw new Error(`/director/upload-audio -> ${res.status}: ${(await res.text()).slice(0, 160)}`);
+  }
+  const body = (await res.json()) as { audio_path: string };
+  return body.audio_path;
+}
+
+export interface StageArtResult {
+  jacket_svg: string;
+  background_svg: string;
+  palette: string[];
+  mock: boolean;
+  model: string;
+}
+
+/** Generate the song jacket + beat-reactive stage background layer. */
+export function generateStageArt(
+  title: string,
+  style_prompt?: string,
+  seed?: number,
+): Promise<StageArtResult> {
+  return postJson<StageArtResult>("/stage/generate-art", {
+    title,
+    style_prompt: style_prompt ?? "neon cyberpunk arcade stage",
+    seed: seed ?? 7,
+  });
+}

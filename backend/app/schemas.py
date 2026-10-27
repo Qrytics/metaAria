@@ -89,6 +89,80 @@ class ChartSchema(BaseModel):
         return self
 
 
+class SamBoxSchema(BaseModel):
+    """Normalized bounding box in 0–1 frame coordinates."""
+
+    x: float = Field(ge=0, le=1)
+    y: float = Field(ge=0, le=1)
+    w: float = Field(ge=0, le=1)
+    h: float = Field(ge=0, le=1)
+    label: str = Field(min_length=1)
+
+
+class SamMaskSchema(BaseModel):
+    """Segmentation polygon mask (normalized 0–1 points) for neon overlay."""
+
+    label: str = Field(min_length=1)
+    polygon: list[list[float]] = Field(min_length=3)
+    confidence: float = Field(default=1.0, ge=0, le=1)
+
+
+class SamHitZoneSchema(BaseModel):
+    """One pad/overdrive trigger derived from a tracked mask."""
+
+    pad: str = Field(description="Q/E/S/Z/C receptor, or OVERDRIVE pose state.")
+    triggered: bool = False
+    confidence: float = Field(default=0.0, ge=0, le=1)
+
+
+class SamSegmentRequestSchema(BaseModel):
+    """Frame + text prompt for `sam-3.1` air-pad tracking."""
+
+    image_b64: str | None = Field(default=None, description="Base64 frame; omit in ENV=dev mock.")
+    prompt: str = Field(default="hands and feet", min_length=1)
+    mode: ChartMode = "pump-5pad"
+
+
+class SamSegmentResponseSchema(BaseModel):
+    boxes: list[SamBoxSchema] = Field(default_factory=list)
+    masks: list[SamMaskSchema] = Field(default_factory=list)
+    hit_zones: list[SamHitZoneSchema] = Field(default_factory=list)
+    overdrive_active: bool = False
+    mock: bool = False
+    model: str = "sam-3.1"
+
+
+class VoiceRemixRequestSchema(BaseModel):
+    """Spoken remix command + active chart. One of audio_path/command_text required."""
+
+    chart: ChartSchema
+    onset_times_ms: list[int] = Field(default_factory=list)
+    command_text: str | None = Field(default=None, description="Text fallback when no mic audio.")
+    audio_path: str | None = Field(default=None, description="Server-side path to recorded mic audio.")
+
+
+class VoiceRemixResponseSchema(BaseModel):
+    chart: ChartSchema
+    report: "CriticReportSchema"
+    attempts: int = Field(ge=0)
+    command: str = Field(description="Effective remix command (transcribed or fallback).")
+    diff_log: list[str] = Field(default_factory=list)
+
+
+class StageArtRequestSchema(BaseModel):
+    title: str = Field(default="Untitled", min_length=1)
+    style_prompt: str = Field(default="neon cyberpunk arcade stage", min_length=1)
+    seed: int = Field(default=7, ge=0)
+
+
+class StageArtResponseSchema(BaseModel):
+    jacket_svg: str = Field(min_length=1)
+    background_svg: str = Field(min_length=1)
+    palette: list[str] = Field(default_factory=list)
+    mock: bool = False
+    model: str = "muse-image"
+
+
 class ViolationSchema(BaseModel):
     """One deterministic or critic-reported playability violation."""
 

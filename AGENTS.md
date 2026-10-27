@@ -77,8 +77,16 @@ only for the open-weight track.
   non-overlap validation; Web Audio YIN pitch detector (60fps, ±1.5-semitone
   octave-folded scoring, simulated-singer mode); Rock Band vocal ribbon synced
   to the shared `AudioContext.currentTime` master clock.
-- **Stage 3 — Studio & Sharing (deferred proposal):** chart studio editor,
-  jacket/stage art via `muse-image`, and export/share flows.
+- **Stage 3 — Multimodal Studio (active):** SAM 3.1 webcam air-pad + pose
+  Overdrive (`POST /vision/sam-segment`, `CamPadOverlay.tsx` with `SIM/CAM/OFF`
+  toggle), Voice AI Chart Director (`POST /director/voice-remix`,
+  `DirectorPanel.tsx` with the `Muse Voice Transcribe` -> `Muse Spark Open 1026
+  Remix` -> `Foot-Parity Validator + Muse Wonder Critic` -> `Muse Image Stage
+  Art` pipeline), and Muse Image reactive stage (`POST /stage/generate-art`,
+  procedural SVG/cyber-stage fallback in `ENV=dev`). Remixed charts hot-swap
+  into the live game engine with the verified chart + critic diff log.
+- **Stage 4 — Studio & Sharing (deferred proposal):** chart studio editor and
+  export/share flows.
 - Interview provenance: target record (root `AGENTS.md`, Option A), docs-only turn with
   no runtime code/commits (Option A), canonical IDs, mandatory caching rule (Option A),
   Q1 game modes accepted as recommended, Q2 data-flow accepted with the two safeguards

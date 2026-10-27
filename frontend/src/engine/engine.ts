@@ -27,6 +27,10 @@ export interface EngineSnapshot {
   judged: number;
   total: number;
   lastJudgment: Judgment | null;
+  /** True while a SAM Overdrive pose holds the 2x score multiplier. */
+  overdrive: boolean;
+  /** True once every note has been judged — the chart is complete. */
+  finished: boolean;
 }
 
 export class RhythmEngine {
@@ -39,6 +43,7 @@ export class RhythmEngine {
   private rafId = 0;
   private running = false;
   private lastJudgment: Judgment | null = null;
+  private overdrive = false;
   private readonly onKeyDown: (e: KeyboardEvent) => void;
   private readonly onKeyUp: (e: KeyboardEvent) => void;
 
@@ -112,6 +117,10 @@ export class RhythmEngine {
       judged: this.hitFlags.filter(Boolean).length,
       total: this.chart.notes.length,
       lastJudgment: this.lastJudgment,
+      overdrive: this.overdrive,
+      finished:
+        this.chart.notes.length > 0 &&
+        this.hitFlags.every((hit) => hit),
     };
   }
 
@@ -122,6 +131,11 @@ export class RhythmEngine {
   /** Studio UI scroll-speed control (multiplier, 1 = nominal). */
   setScrollSpeed(speed: number): void {
     this.renderer.scrollSpeed = speed;
+  }
+
+  /** SAM Cam-Pad Overdrive pose: doubles judged points while true. */
+  setOverdrive(active: boolean): void {
+    this.overdrive = active;
   }
 
   private resolveKey(key: string): number | string | null {
@@ -198,7 +212,7 @@ export class RhythmEngine {
   ): void {
     this.hitFlags[idx] = true;
     this.lastJudgment = judgment;
-    registerJudgment(this.score, judgment);
+    registerJudgment(this.score, judgment, this.overdrive ? 2 : 1);
     const hitTimeMs = this.clock.songTimeMs();
     // Flash map is keyed by lane/pad for the renderer.
     this.flashes.flashes.set(mapKey, {
