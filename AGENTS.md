@@ -69,6 +69,16 @@ only for the open-weight track.
 
 - This document governs agent behavior for the hackathon build. Later stages
   (scaffolding, pipeline, client) are deferred proposals — each needs its own approval.
+- **Stage 2.5 — Rock Band Multi-Speaker Vocal & Live Mic Pitch Scoring Layer
+  (in scope):** `ChartSchema.vocal_phrases` (text, `speaker_id` e.g.
+  `SPEAKER_00`/`SPEAKER_01` from `muse-voice-transcribe` 20+ speaker
+  attribution, `start_ms`/`end_ms`, `midi_pitch` 36–84 or 0 = unpitched);
+  librosa.pyin F0→MIDI contour aligned to phrase timestamps; per-speaker
+  non-overlap validation; Web Audio YIN pitch detector (60fps, ±1.5-semitone
+  octave-folded scoring, simulated-singer mode); Rock Band vocal ribbon synced
+  to the shared `AudioContext.currentTime` master clock.
+- **Stage 3 — Studio & Sharing (deferred proposal):** chart studio editor,
+  jacket/stage art via `muse-image`, and export/share flows.
 - Interview provenance: target record (root `AGENTS.md`, Option A), docs-only turn with
   no runtime code/commits (Option A), canonical IDs, mandatory caching rule (Option A),
   Q1 game modes accepted as recommended, Q2 data-flow accepted with the two safeguards

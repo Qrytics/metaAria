@@ -46,8 +46,18 @@ def generate_endpoint(req: GenerateRequest) -> dict:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     cfg = RouterConfig.from_env()
     vocals = transcribe_vocals(str(wav), cfg)
+    # Stage 2.5: align F0 → MIDI reference pitches onto transcribed phrases.
+    # Pitch extraction is best-effort — transcription timestamps still flow
+    # to the draft generator if the contour fails (e.g. a cappella silence).
+    try:
+        from .dsp import align_phrase_pitches, extract_pitch_contour
+
+        contour = extract_pitch_contour(wav)
+        vocal_phrases = align_phrase_pitches(vocals.get("phrases", []), contour)
+    except Exception:
+        vocal_phrases = vocals.get("phrases", [])
     draft_dict = generate_draft_chart(
-        grid.bpm, grid.onset_times_ms, vocals.get("phrases", []),
+        grid.bpm, grid.onset_times_ms, vocal_phrases,
         [], req.mode, req.title, grid.duration_ms, cfg,
     )
     draft = ChartSchema.model_validate(draft_dict)

@@ -6,6 +6,8 @@ diagnosing and fixing. Checks:
 1. `snap` — every note must fall within ±SNAP_TOLERANCE_MS of a detected onset.
 2. `parity` — 5-pad foot-parity state transitions (strict on Q/E/S/Z/C).
 3. `density` — biomechanical cap on notes per rolling window.
+4. `vocal` — Stage 2.5: vocal phrases sorted by `start_ms` and non-overlapping
+   per speaker (overlaps across different speakers = duet harmony, allowed).
 """
 
 from __future__ import annotations
@@ -151,17 +153,55 @@ def check_density(chart: ChartSchema) -> list[ViolationSchema]:
     return out
 
 
+def check_vocals(chart: ChartSchema) -> list[ViolationSchema]:
+    """Stage 2.5: vocal phrases sorted by start_ms, non-overlapping per speaker.
+
+    Same-speaker overlaps are errors (one voice can't sing two phrases at
+    once). Cross-speaker overlaps are legal duet/harmony call-and-response.
+    Reports use type "critic" so the Critic LLM loop sees them.
+    """
+    out: list[ViolationSchema] = []
+    starts = [p.start_ms for p in chart.vocal_phrases]
+    if starts != sorted(starts):
+        out.append(
+            ViolationSchema(
+                type="critic",
+                time_ms=None,
+                message="vocal_phrases must be sorted by start_ms ascending",
+            )
+        )
+    last_end_by_speaker: dict[str, int] = {}
+    for phrase in chart.vocal_phrases:
+        last_end = last_end_by_speaker.get(phrase.speaker_id)
+        if last_end is not None and phrase.start_ms < last_end:
+            out.append(
+                ViolationSchema(
+                    type="critic",
+                    time_ms=phrase.start_ms,
+                    message=(
+                        f"vocal phrase '{phrase.text}' ({phrase.speaker_id}) "
+                        f"starts at {phrase.start_ms}ms before previous "
+                        f"{phrase.speaker_id} phrase ends at {last_end}ms"
+                    ),
+                )
+            )
+        prev = last_end_by_speaker.get(phrase.speaker_id, -1)
+        last_end_by_speaker[phrase.speaker_id] = max(prev, phrase.end_ms)
+    return out
+
+
 def validate_chart(chart: ChartSchema, onsets_ms: list[int]) -> CriticReportSchema:
     """Run all deterministic checks and pack the compact violation report."""
     snaps = check_snap(chart, onsets_ms)
     parity = check_parity(chart)
     density = check_density(chart)
-    errors = [v for v in (*snaps, *parity, *density) if v.severity == "error"]
+    vocals = check_vocals(chart)
+    errors = [v for v in (*snaps, *parity, *density, *vocals) if v.severity == "error"]
     return CriticReportSchema(
         passed=not errors,
         chart_mode=chart.mode,
         snap_violations=len([v for v in snaps if v.severity == "error"]),
         parity_violations=len([v for v in parity if v.severity == "error"]),
         density_violations=len([v for v in density if v.severity == "error"]),
-        violations=[*snaps, *parity, *density],
+        violations=[*snaps, *parity, *density, *vocals],
     )

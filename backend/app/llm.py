@@ -29,9 +29,14 @@ CHART JSON SCHEMA (static, cached):
 {"mode": "mania-4k" | "pump-5pad", "title": str, "bpm": float > 0,
  "offset_ms": int >= 0, "duration_ms": int > 0,
  "notes": [{"time_ms": int >= 0, "lane": 0-3 | null, "pad": Q/E/S/Z/C | null,
-            "kind": "tap"|"hold"|"slide", "duration_ms": int >= 0}]}
+            "kind": "tap"|"hold"|"slide", "duration_ms": int >= 0}],
+ "vocal_phrases": [{"text": str, "speaker_id": str (e.g. SPEAKER_00),
+            "start_ms": int >= 0, "end_ms": int > start_ms,
+            "midi_pitch": 36-84 pitched | 0 unpitched rap/talkie}]}
 Rules: mania-4k uses lane 0-3 with pad null; pump-5pad uses pad Q/E/S/Z/C
-with lane null; notes sorted by time_ms ascending."""
+with lane null; notes sorted by time_ms ascending; vocal_phrases sorted by
+start_ms ascending and non-overlapping per speaker (cross-speaker overlap
+= duet harmony, allowed)."""
 
 BIOMECH_RULES_STATIC = """\
 BIOMECHANICAL GRADING RULES (static, cached):
@@ -62,7 +67,10 @@ CRITIC_SYSTEM_PROMPT = (
 
 VOICE_SYSTEM_PROMPT = (
     "You are Aria's vocal transcriber. "
-    "Output ONLY JSON {\"phrases\": [{\"text\": str, \"start_ms\": int, \"end_ms\": int}]}."
+    "Output ONLY JSON {\"phrases\": [{\"text\": str, \"speaker_id\": str "
+    "(diarized label, e.g. SPEAKER_00), \"start_ms\": int, \"end_ms\": int}]}. "
+    "Attribute every phrase to its speaker; overlapping phrases from distinct "
+    "speakers are duet harmony — keep both."
 )
 
 
