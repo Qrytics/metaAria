@@ -35,7 +35,6 @@ interface ChartEditorProps {
   onExport: () => void;
   onImportFile: (file: File) => void;
   onRevert: () => void;
-  onToggleResults: () => void;
 }
 
 function isTypingTarget(e: KeyboardEvent): boolean {
@@ -45,6 +44,17 @@ function isTypingTarget(e: KeyboardEvent): boolean {
     t instanceof HTMLTextAreaElement ||
     t instanceof HTMLSelectElement
   );
+}
+
+/**
+ * The studio only trusts physical keys. The SAM cam-pad SIM/CAM loop replays
+ * air-pad hits as synthetic `window` KeyboardEvents (see `firePadHit` in
+ * campad.ts) so they judge through the engine's live keyboard path — but those
+ * same events must never toggle notes, scrub the cursor, or flip studio
+ * panels while stepping a chart.
+ */
+export function acceptsStudioKey(e: Pick<KeyboardEvent, "isTrusted">): boolean {
+  return e.isTrusted;
 }
 
 /**
@@ -77,14 +87,12 @@ export function ChartEditor(props: ChartEditorProps): React.JSX.Element {
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       const p = ref.current;
+      if (!acceptsStudioKey(e)) {
+        return;
+      }
       if (e.key === "F2") {
         e.preventDefault();
         p.onToggleEdit();
-        return;
-      }
-      if (e.key === "Tab") {
-        e.preventDefault();
-        p.onToggleResults();
         return;
       }
       if (e.key === "Escape") {

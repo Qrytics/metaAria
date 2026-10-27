@@ -1,10 +1,31 @@
 import type { EngineSnapshot } from "../engine/engine";
+import { accuracy } from "../engine/judgments";
+import type { Chart } from "../types/chart";
 
 /**
- * Pinned verdict strip: lives directly above the highway so the verdict of
- * every hit is visible during play without scrolling.
+ * Floating arcade telemetry HUD: angled clip-path panels with a giant
+ * combo counter, rolling score digits, and a life/Overdrive gauge.
+ * Pure view over EngineSnapshot — no game math lives here.
  */
-export function VerdictStrip({
+
+function fmtPoints(points: number): string {
+  return Math.max(0, Math.round(points)).toString().padStart(7, "0");
+}
+
+/** One rolling score digit: remounts (ticks) only when its digit changes. */
+function RollDigit({ digit, pos }: { digit: string; pos: number }): React.JSX.Element {
+  return (
+    <span className="roll-digit" key={`${pos}:${digit}`}>
+      {digit}
+    </span>
+  );
+}
+
+/**
+ * Top-left arcade HUD: giant combo counter + rolling score + judgment mini
+ * strip. Clipped with an angled polygon so it reads as cabinet hardware.
+ */
+export function ArcadeHudLeft({
   snap,
   playing,
 }: {
@@ -12,107 +33,93 @@ export function VerdictStrip({
   playing: boolean;
 }): React.JSX.Element {
   const counts = snap?.score.counts;
-  const judged = snap?.judged ?? 0;
-  const acc =
-    snap === null
-      ? 1
-      : (snap.score.counts.PERFECT +
-          snap.score.counts.GREAT * 0.7 +
-          snap.score.counts.GOOD * 0.4) /
-        Math.max(1, judged);
+  const combo = snap?.score.combo ?? 0;
+  const digits = fmtPoints(snap?.score.points ?? 0).split("");
   return (
-    <div
-      className="verdict-strip"
-      role="status"
-      aria-label="Live judgment verdict"
-    >
-      <span className="t-perfect">P:{counts?.PERFECT ?? 0}</span>
-      <span className="t-great">G:{counts?.GREAT ?? 0}</span>
-      <span className="t-good">g:{counts?.GOOD ?? 0}</span>
-      <span className="t-miss">M:{counts?.MISS ?? 0}</span>
-      <span className="t-combo">x{snap?.score.combo ?? 0}</span>
-      <span>PTS:{Math.round(snap?.score.points ?? 0)}</span>
-      {snap?.overdrive === true && <span className="t-overdrive">OVERDRIVE x2</span>}
-      <span>{(acc * 100).toFixed(1)}%</span>
-      <span className="verdict-last">
-        {playing ? (snap?.lastJudgment ?? "--") : "READY"}
-      </span>
+    <div className="arcade-hud hud-left" role="status" aria-label="Combo and score">
+      <div className="hud-combo-block">
+        <span className="hud-caption">COMBO</span>
+        <span
+          key={combo}
+          className={`hud-combo${combo >= 50 ? " mega" : ""}${combo === 0 && !playing ? " idle" : ""}`}
+        >
+          {combo}
+        </span>
+      </div>
+      <div className="hud-score-block">
+        <span className="hud-caption">SCORE</span>
+        <span className="hud-score" aria-label={`Score ${fmtPoints(snap?.score.points ?? 0)}`}>
+          {digits.map((d, i) => (
+            <RollDigit key={i} digit={d} pos={i} />
+          ))}
+        </span>
+      </div>
+      <div className="hud-verdicts">
+        <span className="t-perfect">P{counts?.PERFECT ?? 0}</span>
+        <span className="t-great">G{counts?.GREAT ?? 0}</span>
+        <span className="t-good">g{counts?.GOOD ?? 0}</span>
+        <span className="t-miss">M{counts?.MISS ?? 0}</span>
+        {snap?.overdrive === true && <span className="t-overdrive blink">2x</span>}
+      </div>
     </div>
   );
 }
 
-/** Monospace judgment telemetry: counts, combo, accuracy, song clock. */
-export function TelemetryPanel({
+/**
+ * Top-right arcade HUD: song title/BPM plate + life gauge + Overdrive
+ * state + accuracy/song clock. Mirrors hud-left with the opposite angle.
+ */
+export function ArcadeHudRight({
   snap,
+  chart,
   playing,
 }: {
   snap: EngineSnapshot | null;
+  chart: Chart;
   playing: boolean;
 }): React.JSX.Element {
-  const counts = snap?.score.counts;
+  const acc = snap === null ? 1 : accuracy(snap.score);
+  const life = Math.round(acc * 100);
+  const overdrive = snap?.overdrive === true;
   const judged = snap?.judged ?? 0;
   const total = snap?.total ?? 0;
-  const acc =
-    snap === null
-      ? 1
-      : (snap.score.counts.PERFECT +
-          snap.score.counts.GREAT * 0.7 +
-          snap.score.counts.GOOD * 0.4) /
-        Math.max(1, judged);
-  const rows: Array<[string, number | string, string]> = [
-    ["PERFECT", counts?.PERFECT ?? 0, "t-perfect"],
-    ["GREAT", counts?.GREAT ?? 0, "t-great"],
-    ["GOOD", counts?.GOOD ?? 0, "t-good"],
-    ["MISS", counts?.MISS ?? 0, "t-miss"],
-  ];
   return (
-    <section className="panel">
-      <header className="panel-head">
-        <span className="led" data-on={playing} />
-        JUDGMENT TELEMETRY
-      </header>
-      <div className="telemetry-grid">
-        {rows.map(([label, value, cls]) => (
-          <div key={label} className="meter">
-            <span className="meter-label">{label}</span>
-            <span className={`meter-value ${cls}`}>{value}</span>
-          </div>
-        ))}
-        <div className="meter">
-          <span className="meter-label">COMBO</span>
-          <span className="meter-value t-combo">{snap?.score.combo ?? 0}</span>
+    <div className="arcade-hud hud-right" role="status" aria-label="Song status">
+      <div className="hud-title-block">
+        <span className="hud-song">{chart.title}</span>
+        <span className="hud-sub">
+          {chart.mode === "pump-5pad" ? "5-PAD" : "4-KEY"} · {chart.bpm} BPM ·{" "}
+          {playing ? "PLAYING" : "READY"}
+        </span>
+      </div>
+      <div className="hud-life-block">
+        <div className="hud-life-row">
+          <span className="hud-caption">LIFE</span>
+          <span className={`hud-life-num${life < 50 ? " danger" : ""}`}>{life}%</span>
         </div>
-        <div className="meter">
-          <span className="meter-label">MAX COMBO</span>
-          <span className="meter-value">{snap?.score.maxCombo ?? 0}</span>
+        <div
+          className="hud-life-bar"
+          role="progressbar"
+          aria-valuenow={life}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-label="Life gauge"
+        >
+          <div
+            className={`hud-life-fill${overdrive ? " od" : ""}`}
+            style={{ width: `${Math.min(100, Math.max(0, life))}%` }}
+          />
         </div>
-        <div className="meter">
-          <span className="meter-label">POINTS</span>
-          <span className="meter-value t-combo">
-            {Math.round(snap?.score.points ?? 0)}
+        <div className="hud-od-row">
+          <span className={`hud-od${overdrive ? " live" : ""}`}>
+            {overdrive ? "◆ OVERDRIVE ×2" : "◇ OVERDRIVE"}
           </span>
-        </div>
-        <div className="meter">
-          <span className="meter-label">ACCURACY</span>
-          <span className="meter-value">{(acc * 100).toFixed(2)}%</span>
-        </div>
-        <div className="meter">
-          <span className="meter-label">NOTES</span>
-          <span className="meter-value">
+          <span className="hud-clock">
+            T+{Math.max(0, Math.round(snap?.songTimeMs ?? 0)).toString().padStart(6, "0")} ·{" "}
             {judged}/{total}
           </span>
         </div>
       </div>
-      <div className="readout">
-        <span>
-          T+{Math.max(0, Math.round(snap?.songTimeMs ?? 0))
-            .toString()
-            .padStart(6, "0")}ms
-        </span>
-        <span className="readout-last">
-          LAST: {snap?.lastJudgment ?? "--"}
-        </span>
-      </div>
-    </section>
+    </div>
   );
 }

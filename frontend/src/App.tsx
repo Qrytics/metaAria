@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { validateChart, voiceRemix, type StageArtResult } from "./api";
 import { CamPadOverlay } from "./components/CamPadOverlay";
-import { ChartEditor } from "./components/ChartEditor";
+import { ChartEditor, acceptsStudioKey } from "./components/ChartEditor";
 import { DirectorPanel } from "./components/DirectorPanel";
 import { HighwayCanvas } from "./components/HighwayCanvas";
 import { ResultsPanel } from "./components/ResultsPanel";
@@ -11,7 +11,7 @@ import {
   type VocalStats,
 } from "./components/VocalHighway";
 import { LivePitchDetector } from "./engine/pitchDetector";
-import { TelemetryPanel, VerdictStrip } from "./components/TelemetryPanel";
+import { ArcadeHudLeft, ArcadeHudRight } from "./components/TelemetryPanel";
 import { ChartPanel } from "./components/ChartPanel";
 import { CriticInspector } from "./components/CriticInspector";
 import { RhythmEngine, type EngineSnapshot } from "./engine/engine";
@@ -50,6 +50,15 @@ const LIB: Record<string, Chart> = {
   broken: pumpBrokenQZ,
 };
 
+function isTypingTarget(e: KeyboardEvent): boolean {
+  const t = e.target as HTMLElement | null;
+  return (
+    t instanceof HTMLInputElement ||
+    t instanceof HTMLTextAreaElement ||
+    t instanceof HTMLSelectElement
+  );
+}
+
 export function App(): React.JSX.Element {
   const [chartKey, setChartKey] = useState("pump-5pad");
   const [chart, setChart] = useState<Chart>(pumpSample);
@@ -79,6 +88,8 @@ export function App(): React.JSX.Element {
   const [histLen, setHistLen] = useState({ undo: 0, redo: 0 });
   const historyRef = useRef<EditHistory<Chart>>(emptyHistory());
   const micRef = useRef<LivePitchDetector | null>(null);
+  // Studio rack drawer: slides over the right rail; auto-hides during PLAY.
+  const [drawerOpen, setDrawerOpen] = useState(true);
 
   // Same AudioContext master clock the pad highway reads — one clock, no drift.
   const getSongTimeMs = useCallback(
@@ -386,9 +397,53 @@ export function App(): React.JSX.Element {
     loadChart(m);
   };
 
+  /* Global arcade keys: Space = PLAY/PAUSE, TAB = studio rack, E = rack
+     when it cannot collide with a live pad key or an edit pad toggle. */
+  const playStateRef = useRef({ playing, activeEdit, mode });
+  playStateRef.current = { playing, activeEdit, mode };
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      // Synthetic cam-pad replays (firePadHit) drive the engine, never chrome.
+      if (!acceptsStudioKey(e) || isTypingTarget(e)) {
+        return;
+      }
+      if (e.key === "Tab") {
+        e.preventDefault();
+        setDrawerOpen((v) => !v);
+        return;
+      }
+      if (e.key === " ") {
+        e.preventDefault();
+        if (!e.repeat) {
+          setPlaying((v) => !v);
+        }
+        return;
+      }
+      if (e.repeat || e.ctrlKey || e.metaKey || e.altKey) {
+        return;
+      }
+      if (e.key.toLowerCase() === "e") {
+        const s = playStateRef.current;
+        // E is a live pad key during pump PLAY and the pad toggle in pump
+        // EDIT — the game/engine owns it there, never the drawer.
+        if (s.mode === "pump-5pad" && (s.playing || s.activeEdit)) {
+          return;
+        }
+        e.preventDefault();
+        setDrawerOpen((v) => !v);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  const drawerVisible = drawerOpen && !playing;
+
   return (
     <div
-      className="studio"
+      className="arcade-viewport"
+      data-playing={playing}
+      data-editing={editing}
       onDragOver={(e) => e.preventDefault()}
       onDrop={(e) => {
         e.preventDefault();
@@ -401,182 +456,196 @@ export function App(): React.JSX.Element {
         }
       }}
     >
-      <header className="studio-head">
-        <h1>ARIA CHARTING STUDIO</h1>
-        <span className="sub">HW-DAW // ARCADE CABINET REV A</span>
-      </header>
-      <div className="deck">
-        <div>
-          <VerdictStrip snap={snap} playing={playing} />
-          <section className="panel">
-            <header className="panel-head">VOCAL RIBBON</header>
-            <VocalHighway
-              chartTitle={chart.title}
-              phrases={chart.vocal_phrases ?? []}
-              playing={playing}
-              getSongTimeMs={getSongTimeMs}
-              pitchSource={pitchSource}
-              onVocalStats={setVocalStats}
-            />
-            <div className="transport" style={{ marginTop: 8 }}>
-              <div className="mode-switch" role="group" aria-label="Vocal pitch source">
-                {(["sim", "mic", "off"] as const).map((m) => (
-                  <button
-                    key={m}
-                    type="button"
-                    aria-pressed={vocalMode === m}
-                    onClick={() => setVocalMode(m)}
-                  >
-                    {m === "sim" ? "SIM SINGER" : m.toUpperCase()}
-                  </button>
-                ))}
-              </div>
-              <span aria-live="polite">
-                {vocalStats !== null &&
-                  `VOCAL ${vocalStats.accuracy.toFixed(0)}% · ${vocalStats.activeText ?? "—"}`}
-                {micError !== null && ` · MIC ERROR: ${micError}`}
-              </span>
-            </div>
-          </section>
-          {stageArt !== null && (
-            <section className="panel" aria-label="Reactive stage background">
-              <header className="panel-head">
-                STAGE BACKDROP · {stageArt.mock ? "MOCK SVG $0" : "MUSE IMAGE"}
-              </header>
-              <div
-                className="stage-backdrop"
-                data-playing={playing}
-                style={{ ["--beat" as string]: `${60 / chart.bpm}s` }}
-                aria-label="Beat-reactive stage background"
-                dangerouslySetInnerHTML={{ __html: stageArt.background_svg }}
-              />
-            </section>
-          )}
-          {showResults && (
-            <ResultsPanel
-              snap={snap}
-              vocalAccuracy={vocalStats?.accuracy ?? null}
-              mode={mode}
-              onClose={() => setShowResults(false)}
-              onReplay={replay}
-            />
-          )}
-          <HighwayCanvas
-            key={runId}
-            chart={chart}
+      {/* Reactive stage backdrop: Muse Image art (screen-blended over the
+          highway) or a beat-pulsed fallback arena wash. */}
+      <div className="arcade-stage" aria-hidden="true">
+        {stageArt !== null ? (
+          <div
+            className="stage-backdrop"
+            data-playing={playing}
+            style={{ ["--beat" as string]: `${60 / chart.bpm}s` }}
+            dangerouslySetInnerHTML={{ __html: stageArt.background_svg }}
+          />
+        ) : (
+          <div
+            className="stage-fallback"
+            data-playing={playing}
+            style={{ ["--beat" as string]: `${60 / chart.bpm}s` }}
+          />
+        )}
+      </div>
+
+      <HighwayCanvas
+        key={runId}
+        chart={chart}
+        playing={playing}
+        speed={speed}
+        audioOn={audioOn}
+        engineRef={engineRef}
+        onSnapshot={handleSnapshot}
+        editing={editing}
+        cursorMs={cursorMs}
+        marks={markers}
+        onLaneClick={toggleEditKey}
+        onWheelScrub={scrub}
+      />
+      <div className="arcade-vignette" aria-hidden="true" />
+
+      {/* Floating arcade HUD */}
+      <ArcadeHudLeft snap={snap} playing={playing} />
+      <ArcadeHudRight snap={snap} chart={chart} playing={playing} />
+      <div className="hud-top-center">
+        <div className="vocal-hud-bar">
+          <VocalHighway
+            chartTitle={chart.title}
+            phrases={chart.vocal_phrases ?? []}
             playing={playing}
-            speed={speed}
-            audioOn={audioOn}
-            engineRef={engineRef}
-            onSnapshot={handleSnapshot}
-            editing={editing}
-            cursorMs={cursorMs}
-            marks={markers}
-            onLaneClick={toggleEditKey}
-            onWheelScrub={scrub}
+            getSongTimeMs={getSongTimeMs}
+            pitchSource={pitchSource}
+            onVocalStats={setVocalStats}
           />
-          <section className="panel">
-            <header className="panel-head">TRANSPORT</header>
-            <div className="transport">
-              <div className="mode-switch" role="group" aria-label="Mode">
+          <div className="vocal-hud-sub">
+            <div className="mini-switch" role="group" aria-label="Vocal pitch source">
+              {(["sim", "mic", "off"] as const).map((m) => (
                 <button
+                  key={m}
                   type="button"
-                  aria-pressed={mode === "mania-4k"}
-                  onClick={() => switchMode("mania-4k")}
+                  aria-pressed={vocalMode === m}
+                  onClick={() => setVocalMode(m)}
                 >
-                  4K
+                  {m === "sim" ? "SIM" : m.toUpperCase()}
                 </button>
-                <button
-                  type="button"
-                  aria-pressed={mode === "pump-5pad"}
-                  onClick={() => switchMode("pump-5pad")}
-                >
-                  5-PAD
-                </button>
-              </div>
-              {!playing ? (
-                <button
-                  type="button"
-                  className="hw-btn lit"
-                  onClick={() => setPlaying(true)}
-                >
-                  PLAY
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  className="hw-btn"
-                  onClick={() => setPlaying(false)}
-                >
-                  PAUSE
-                </button>
-              )}
-              <button
-                type="button"
-                className="hw-btn"
-                onClick={() => {
-                  setPlaying(false);
-                  setSnap(null);
-                }}
-              >
-                RESET
-              </button>
-              <button
-                type="button"
-                className="hw-btn"
-                onClick={() => setShowResults((s) => !s)}
-              >
-                RESULTS [TAB]
-              </button>
-              <label className="switch">
-                <input
-                  type="checkbox"
-                  checked={audioOn}
-                  onChange={(e) => setAudioOn(e.target.checked)}
-                />
-                AUDIO
-              </label>
-              <label className="slider">
-                SPEED {speed.toFixed(2)}x
-                <input
-                  type="range"
-                  min={0.5}
-                  max={2}
-                  step={0.05}
-                  value={speed}
-                  onChange={(e) => setSpeed(Number(e.target.value))}
-                />
-              </label>
+              ))}
             </div>
-            <div className="transport" style={{ marginTop: 8 }}>
-              <div className="mode-switch" role="group" aria-label="Chart library">
-                {(Object.keys(LIB) as string[]).map((key) => (
-                  <button
-                    key={key}
-                    type="button"
-                    aria-pressed={chartKey === key}
-                    onClick={() => loadChart(key)}
-                  >
-                    {key.toUpperCase()}
-                  </button>
-                ))}
-                {chartKey === "generated" && (
-                  <button type="button" aria-pressed={true}>
-                    GENERATED
-                  </button>
-                )}
-              </div>
-            </div>
-          </section>
-          <TelemetryPanel snap={snap} playing={playing} />
-          <CamPadOverlay
-            chartMode={mode}
-            onOverdriveChange={(active) => {
-              engineRef.current?.setOverdrive(active);
-            }}
-          />
+            <span aria-live="polite">
+              {vocalStats !== null &&
+                `VOCAL ${vocalStats.accuracy.toFixed(0)}% · ${vocalStats.activeText ?? "—"}`}
+              {micError !== null && ` · MIC ERROR: ${micError}`}
+            </span>
+          </div>
         </div>
-        <div>
+      </div>
+
+      {/* Bottom-left arcade picture-in-picture: SAM cam-pad tracker */}
+      <div className="arcade-pip">
+        <CamPadOverlay
+          chartMode={mode}
+          onOverdriveChange={(active) => {
+            engineRef.current?.setOverdrive(active);
+          }}
+        />
+      </div>
+
+      {/* Bottom control deck */}
+      <div className="arcade-deck" role="toolbar" aria-label="Arcade control deck">
+        <div className="mode-switch" role="group" aria-label="Mode">
+          <button
+            type="button"
+            aria-pressed={mode === "mania-4k"}
+            onClick={() => switchMode("mania-4k")}
+          >
+            4K
+          </button>
+          <button
+            type="button"
+            aria-pressed={mode === "pump-5pad"}
+            onClick={() => switchMode("pump-5pad")}
+          >
+            5-PAD
+          </button>
+        </div>
+        {!playing ? (
+          <button type="button" className="hw-btn lit deck-play" onClick={() => setPlaying(true)}>
+            ▶ PLAY
+          </button>
+        ) : (
+          <button type="button" className="hw-btn deck-play" onClick={() => setPlaying(false)}>
+            ❚❚ PAUSE
+          </button>
+        )}
+        <button
+          type="button"
+          className="hw-btn"
+          onClick={() => {
+            setPlaying(false);
+            setSnap(null);
+          }}
+        >
+          RESET
+        </button>
+        <button
+          type="button"
+          className="hw-btn"
+          onClick={() => setShowResults((s) => !s)}
+        >
+          RESULTS
+        </button>
+        <div className="mode-switch" role="group" aria-label="Chart library">
+          {(Object.keys(LIB) as string[]).map((key) => (
+            <button
+              key={key}
+              type="button"
+              aria-pressed={chartKey === key}
+              onClick={() => loadChart(key)}
+            >
+              {key.toUpperCase()}
+            </button>
+          ))}
+          {chartKey === "generated" && (
+            <button type="button" aria-pressed={true}>
+              GENERATED
+            </button>
+          )}
+        </div>
+        <label className="switch">
+          <input
+            type="checkbox"
+            checked={audioOn}
+            onChange={(e) => setAudioOn(e.target.checked)}
+          />
+          AUDIO
+        </label>
+        <label className="slider">
+          {speed.toFixed(2)}x
+          <input
+            type="range"
+            min={0.5}
+            max={2}
+            step={0.05}
+            value={speed}
+            aria-label="Scroll speed"
+            onChange={(e) => setSpeed(Number(e.target.value))}
+          />
+        </label>
+      </div>
+
+      {/* Studio rack drawer toggle rail */}
+      <button
+        type="button"
+        className="drawer-tab"
+        data-open={drawerVisible}
+        onClick={() => {
+          if (!playing) {
+            setDrawerOpen((v) => !v);
+          }
+        }}
+        title={playing ? "Pause to open the studio rack" : "Toggle studio rack [TAB]"}
+      >
+        {drawerVisible ? "RACK ▸" : "◂ RACK"}
+      </button>
+
+      {/* Slide-over hardware rack: studio panels live here, never over gameplay */}
+      <aside
+        className="rack-drawer"
+        data-open={drawerVisible}
+        aria-hidden={!drawerVisible}
+        aria-label="Studio rack drawer"
+      >
+        <header className="rack-head">
+          <span>STUDIO RACK</span>
+          <span className="dim">[TAB]/[E]</span>
+        </header>
+        <div className="rack-scroll">
           <ChartPanel
             chart={chart}
             grid={grid}
@@ -617,7 +686,6 @@ export function App(): React.JSX.Element {
             onExport={exportPackFile}
             onImportFile={importPackFile}
             onRevert={revertStock}
-            onToggleResults={() => setShowResults((s) => !s)}
           />
           <CriticInspector onChart={onGenerated} />
           <DirectorPanel
@@ -627,7 +695,19 @@ export function App(): React.JSX.Element {
             onStageArt={setStageArt}
           />
         </div>
-      </div>
+      </aside>
+
+      {showResults && (
+        <div className="results-overlay" role="dialog" aria-label="Run results">
+          <ResultsPanel
+            snap={snap}
+            vocalAccuracy={vocalStats?.accuracy ?? null}
+            mode={mode}
+            onClose={() => setShowResults(false)}
+            onReplay={replay}
+          />
+        </div>
+      )}
     </div>
   );
 }

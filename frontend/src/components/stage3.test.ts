@@ -25,6 +25,7 @@ import {
   createScoreState,
   registerJudgment,
 } from "../engine/judgments";
+import { acceptsStudioKey } from "./ChartEditor";
 
 describe("campad zones", () => {
   it("covers all five pump pads exactly once", () => {
@@ -181,5 +182,17 @@ describe("overdrive scoring", () => {
     registerJudgment(s, "MISS", 2);
     expect(s.points).toBe(0);
     expect(s.combo).toBe(0);
+  });
+});
+
+describe("studio key trust", () => {
+  it("rejects synthetic cam-pad replays so SIM air-pad hits cannot edit charts", () => {
+    // firePadHit dispatches `new KeyboardEvent("keydown", { key })` with no
+    // trust: the engine must still receive these, but the studio must not.
+    expect(acceptsStudioKey({ isTrusted: false })).toBe(false);
+  });
+
+  it("accepts physical player keys for studio shortcuts", () => {
+    expect(acceptsStudioKey({ isTrusted: true })).toBe(true);
   });
 });

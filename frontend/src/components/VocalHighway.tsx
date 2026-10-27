@@ -211,9 +211,14 @@ export function VocalHighway({
           const y = tubeY(p.midi_pitch, center, H);
           const sung = p.end_ms <= nowMs;
           g.globalAlpha = sung ? 0.35 : 1;
+          // Neon pitch tube: colored glow body.
+          g.save();
+          g.shadowColor = color;
+          g.shadowBlur = sung ? 0 : 14;
           g.fillStyle = color;
           roundRect(g, x0, y - 11, x1 - x0, 22, 11);
           g.fill();
+          g.restore();
           if (p.speaker_id === "SPEAKER_01") {
             g.strokeStyle = "#ffd166";
             g.lineWidth = 1.5;
@@ -221,21 +226,29 @@ export function VocalHighway({
             g.stroke();
           }
           g.globalAlpha = 1;
+          g.save();
+          g.shadowColor = "#e8eef7";
+          g.shadowBlur = 8;
           g.fillStyle = "#e8eef7";
           const label = p.text.length > 26 ? `${p.text.slice(0, 25)}…` : p.text;
           g.fillText(label, Math.min(x0 + 4, W - 90), y + 26);
+          g.restore();
         }
         g.fillStyle = "#8b98ad";
         g.fillText(p.speaker_id, Math.min(x0 + 4, W - 90), H - 9);
       }
 
-      // Now line.
+      // Now line: hot white needle with cyan halo.
+      g.save();
+      g.shadowColor = "#22d3ee";
+      g.shadowBlur = 12;
       g.strokeStyle = "#f2f5fa";
       g.lineWidth = 2;
       g.beginPath();
       g.moveTo(nowX, 0);
       g.lineTo(nowX, H - 26);
       g.stroke();
+      g.restore();
 
       // Live vocal comet needle.
       const src = srcRef.current;

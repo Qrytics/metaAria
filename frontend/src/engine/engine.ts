@@ -36,6 +36,10 @@ export interface EngineSnapshot {
 export class RhythmEngine {
   private readonly clock: MasterClock;
   private readonly renderer: ChartRenderer;
+  private readonly audioCtx: AudioContext;
+  private master: GainNode | null = null;
+  private analyser: AnalyserNode | null = null;
+  private spectrum: Uint8Array<ArrayBuffer> = new Uint8Array(0);
   private readonly flashes = createRenderState();
   private chart: Chart;
   private score: ScoreState = createScoreState();
@@ -49,6 +53,7 @@ export class RhythmEngine {
 
   constructor(canvas: HTMLCanvasElement, audioCtx: AudioContext, chart: Chart) {
     this.clock = new MasterClock(audioCtx);
+    this.audioCtx = audioCtx;
     this.renderer = new ChartRenderer(canvas);
     this.chart = chart;
     this.hitFlags = chart.notes.map(() => false);
@@ -71,6 +76,32 @@ export class RhythmEngine {
     this.flashes.held.clear();
     this.flashes.activeHolds.clear();
     this.flashes.pops.length = 0;
+    this.flashes.combo = 0;
+  }
+
+  /**
+   * Master bus for the demo synth: synth -> master -> analyser ->
+   * destination. The renderer reads FFT magnitudes from the same tap, so the
+   * stage visualizer pulses with the exact audible mix.
+   */
+  synthDest(): AudioNode {
+    if (this.master === null || this.analyser === null) {
+      const master = this.audioCtx.createGain();
+      const analyser = this.audioCtx.createAnalyser();
+      analyser.fftSize = 64;
+      analyser.smoothingTimeConstant = 0.78;
+      master.connect(analyser);
+      analyser.connect(this.audioCtx.destination);
+      this.master = master;
+      this.analyser = analyser;
+      this.spectrum = new Uint8Array(analyser.frequencyBinCount);
+    }
+    return this.master;
+  }
+
+  /** Refit the canvas backing store (fullscreen resize). */
+  refit(): void {
+    this.renderer.fitToDisplay();
   }
 
   /** Record a hit mark at the note's position; newest last, capped. */
@@ -103,6 +134,14 @@ export class RhythmEngine {
     this.clock.stop();
     window.removeEventListener("keydown", this.onKeyDown);
     window.removeEventListener("keyup", this.onKeyUp);
+    try {
+      this.analyser?.disconnect();
+      this.master?.disconnect();
+    } catch {
+      // Nodes already torn down with the AudioContext; ignore.
+    }
+    this.analyser = null;
+    this.master = null;
   }
 
   /** Live song position in ms, straight from the audio master clock. */
@@ -136,6 +175,7 @@ export class RhythmEngine {
   /** SAM Cam-Pad Overdrive pose: doubles judged points while true. */
   setOverdrive(active: boolean): void {
     this.overdrive = active;
+    this.renderer.overdrive = active;
   }
 
   private resolveKey(key: string): number | string | null {
@@ -227,6 +267,12 @@ export class RhythmEngine {
 
   private frame(): void {
     const now = this.clock.songTimeMs();
+    // Feed the stage visualizer + callout from the same audio clock.
+    if (this.analyser !== null) {
+      this.analyser.getByteFrequencyData(this.spectrum);
+      this.renderer.spectrum = this.spectrum;
+    }
+    this.flashes.combo = this.score.combo;
     // Miss sweep: unhit notes past the GOOD window become MISS.
     this.chart.notes.forEach((note, i) => {
       if (!this.hitFlags[i] && isMissWindowExceeded(now, note.time_ms)) {

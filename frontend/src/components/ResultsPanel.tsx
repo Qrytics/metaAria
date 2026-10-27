@@ -16,7 +16,7 @@ const MANIA_LABELS = ["D", "F", "J", "K"];
 /**
  * Bench-equipment results readout: grade, accuracy, max combo, vocal
  * pitch %, and a per-key judgment breakdown. Pure view over the engine
- * snapshot — shown on finish or toggled with RESULTS [TAB].
+ * snapshot — shown on finish or toggled from the control deck.
  */
 export function ResultsPanel({
   snap,
@@ -37,7 +37,7 @@ export function ResultsPanel({
 
   return (
     <section className="panel results" aria-label="Run results readout">
-      <header className="panel-head">RESULTS [TAB]</header>
+      <header className="panel-head">RESULTS</header>
       <div className="telemetry-grid">
         <div className="meter">
           <span className="meter-label">GRADE</span>
@@ -83,7 +83,7 @@ export function ResultsPanel({
           PLAY AGAIN
         </button>
         <button type="button" className="hw-btn" onClick={onClose}>
-          CLOSE [TAB]
+          CLOSE
         </button>
       </div>
     </section>
