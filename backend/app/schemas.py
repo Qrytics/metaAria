@@ -196,3 +196,28 @@ class CriticReportSchema(BaseModel):
         # Counts are informational, so don't hard-fail on mismatch — the
         # validator builds them consistently.
         return self
+
+
+class IngestTelemetrySchema(BaseModel):
+    """Per-stage pipeline timings (ms) for the Studio Rack progress bar."""
+
+    dsp_ms: float = Field(ge=0)
+    transcribe_ms: float = Field(ge=0)
+    sam_ms: float = Field(ge=0)
+    draft_ms: float = Field(ge=0)
+    critic_ms: float = Field(ge=0)
+
+
+class IngestResponseSchema(BaseModel):
+    """Verified chart + critic report + stage art + telemetry for one upload."""
+
+    chart: ChartSchema
+    report: CriticReportSchema
+    attempts: int = Field(ge=0)
+    bpm: float = Field(gt=0)
+    duration_ms: int = Field(gt=0)
+    onset_times_ms: list[int] = Field(default_factory=list)
+    motion_peaks_ms: list[int] = Field(default_factory=list)
+    art: StageArtResponseSchema
+    telemetry: IngestTelemetrySchema
+    mock: dict[str, bool] = Field(default_factory=dict)

@@ -102,6 +102,26 @@ only for the open-weight track.
   (`RESULTS [TAB]`): SSS–F grade, accuracy %, max combo, vocal pitch %,
   per-key `PERFECT/GREAT/GOOD/MISS` breakdown. UI stays in the
   `studio.css` bench-equipment language; zero new backend endpoints.
+- **Stage 5 — Real Audio/Video Ingest & Web Audio Buffer Sync (in build):**
+  `POST /charts/ingest` (`multipart/form-data`: required `audio_file`
+  `.mp3`/`.wav`/`.ogg`/`.m4a`, optional `video_file` `.mp4`/`.webm`, `mode`,
+  `difficulty` `normal`/`hard`, `title`). Pipeline: FFmpeg 16kHz transcode +
+  `dsp.py` onset/BPM/duration/`pyin` (`backend/app/ingest.py`); multi-speaker
+  `muse-voice-transcribe` phrases + `pyin` MIDI align (smart onset-aligned
+  deterministic fallback in `ENV=dev` without `META_API_KEY`, $0);
+  keyframe sampling + `sam-3.1` motion peaks (deterministic frame-diff
+  fallback in `ENV=dev`); `meta-models/muse-spark-open-1026` draft
+  (deterministic onset-snapped rhythm synthesizer fallback, density-capped
+  so pre-checks pass by construction); `MAX_CRITIC_RETRIES = 3` validator +
+  `muse-wonder-1.0` critic loop + `muse-image` jacket. Returns the verified
+  `ChartSchema`, `CriticReportSchema`, stage art, and per-stage telemetry
+  (`dsp_ms`, `transcribe_ms`, `sam_ms`, `draft_ms`, `critic_ms`). Frontend:
+  engine `startWithBuffer()` decodes uploads via `decodeAudioData()` into
+  an `AudioBufferSourceNode` on the existing master/FFT bus with the
+  `AudioContext` clock locked to the exact playback offset (<5ms sync);
+  synth stays for stock charts. Studio Rack `LOAD TRACK [L]` dropzone
+  (`TrackIngestPanel.tsx`) with the live 5-stage ladder (`ingest.ts`)
+  that stamps real telemetry on completion and hot-swaps the playable song.
 - Interview provenance: target record (root `AGENTS.md`, Option A), docs-only turn with
   no runtime code/commits (Option A), canonical IDs, mandatory caching rule (Option A),
   Q1 game modes accepted as recommended, Q2 data-flow accepted with the two safeguards

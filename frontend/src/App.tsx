@@ -5,6 +5,7 @@ import { ChartEditor, acceptsStudioKey } from "./components/ChartEditor";
 import { DirectorPanel } from "./components/DirectorPanel";
 import { HighwayCanvas } from "./components/HighwayCanvas";
 import { ResultsPanel } from "./components/ResultsPanel";
+import { TrackIngestPanel } from "./components/TrackIngestPanel";
 import {
   VocalHighway,
   type VocalPitchSource,
@@ -64,6 +65,7 @@ export function App(): React.JSX.Element {
   const [chart, setChart] = useState<Chart>(pumpSample);
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState(1);
+  const [scrollDir, setScrollDir] = useState<"up" | "down">("up");
   const [audioOn, setAudioOn] = useState(true);
   const [snap, setSnap] = useState<EngineSnapshot | null>(null);
   const [report, setReport] = useState<CriticReport | null>(null);
@@ -83,6 +85,9 @@ export function App(): React.JSX.Element {
   const [repairError, setRepairError] = useState<string | null>(null);
   const [repairLog, setRepairLog] = useState<string[] | null>(null);
   const [showResults, setShowResults] = useState(false);
+  // Stage 5: ingested real-audio track — chart + playable object URL.
+  const [ingested, setIngested] = useState<Chart | null>(null);
+  const [trackAudioUrl, setTrackAudioUrl] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
   const [histLen, setHistLen] = useState({ undo: 0, redo: 0 });
@@ -212,6 +217,56 @@ export function App(): React.JSX.Element {
     setRepairLog(null);
     setDirty(false);
     setShowResults(false);
+    historyRef.current = emptyHistory();
+    setHistLen({ undo: 0, redo: 0 });
+  };
+
+  /* Stage 5: an ingested upload hot-swaps in with its real audio + art. */
+  const onIngested = (
+    next: Chart,
+    rep: CriticReport | null,
+    audioUrl: string,
+    art: StageArtResult,
+  ): void => {
+    setPlaying(false);
+    setTrackAudioUrl((old) => {
+      if (old !== null) {
+        URL.revokeObjectURL(old);
+      }
+      return audioUrl;
+    });
+    setIngested(structuredClone(next));
+    setChartKey("ingested");
+    setChart(next);
+    setSnap(null);
+    setReport(rep);
+    setStageArt(art);
+    setEditing(false);
+    setMarkers(new Map());
+    setRepairLog(null);
+    setRepairError(null);
+    setDirty(false);
+    setShowResults(false);
+    setImportError(null);
+    historyRef.current = emptyHistory();
+    setHistLen({ undo: 0, redo: 0 });
+  };
+
+  const loadIngested = (): void => {
+    if (ingested === null) {
+      return;
+    }
+    setPlaying(false);
+    setChartKey("ingested");
+    setChart(structuredClone(ingested));
+    setSnap(null);
+    setEditing(false);
+    setCursorMs(0);
+    setMarkers(new Map());
+    setRepairLog(null);
+    setRepairError(null);
+    setShowResults(false);
+    setImportError(null);
     historyRef.current = emptyHistory();
     setHistLen({ undo: 0, redo: 0 });
   };
@@ -422,6 +477,18 @@ export function App(): React.JSX.Element {
       if (e.repeat || e.ctrlKey || e.metaKey || e.altKey) {
         return;
       }
+      // L is no pad key in either mode and no EDIT key — it always jumps
+      // to the LOAD TRACK dropzone in the studio rack.
+      if (e.key.toLowerCase() === "l") {
+        e.preventDefault();
+        setDrawerOpen(true);
+        window.requestAnimationFrame(() => {
+          document
+            .querySelector<HTMLElement>("#load-track .dropzone")
+            ?.focus();
+        });
+        return;
+      }
       if (e.key.toLowerCase() === "e") {
         const s = playStateRef.current;
         // E is a live pad key during pump PLAY and the pad toggle in pump
@@ -480,7 +547,9 @@ export function App(): React.JSX.Element {
         chart={chart}
         playing={playing}
         speed={speed}
+        scrollDir={scrollDir}
         audioOn={audioOn}
+        audioUrl={chartKey === "ingested" ? trackAudioUrl : null}
         engineRef={engineRef}
         onSnapshot={handleSnapshot}
         editing={editing}
@@ -596,6 +665,15 @@ export function App(): React.JSX.Element {
               GENERATED
             </button>
           )}
+          {ingested !== null && (
+            <button
+              type="button"
+              aria-pressed={chartKey === "ingested"}
+              onClick={loadIngested}
+            >
+              INGESTED
+            </button>
+          )}
         </div>
         <label className="switch">
           <input
@@ -605,6 +683,24 @@ export function App(): React.JSX.Element {
           />
           AUDIO
         </label>
+        <div className="mode-switch" role="group" aria-label="Scroll direction">
+          <button
+            type="button"
+            aria-pressed={scrollDir === "up"}
+            onClick={() => setScrollDir("up")}
+            title="UP-SCROLL: receptors at the top (StepMania / PIU classic)"
+          >
+            ↑ UP
+          </button>
+          <button
+            type="button"
+            aria-pressed={scrollDir === "down"}
+            onClick={() => setScrollDir("down")}
+            title="DOWN-SCROLL: receptors at the bottom (mania style)"
+          >
+            ↓ DOWN
+          </button>
+        </div>
         <label className="slider">
           {speed.toFixed(2)}x
           <input
@@ -646,6 +742,7 @@ export function App(): React.JSX.Element {
           <span className="dim">[TAB]/[E]</span>
         </header>
         <div className="rack-scroll">
+          <TrackIngestPanel onIngested={onIngested} />
           <ChartPanel
             chart={chart}
             grid={grid}

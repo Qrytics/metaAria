@@ -828,6 +828,43 @@ body {
   word-break: break-word;
 }
 
+/* Stage 5: LOAD TRACK hardware dropzone. */
+.dropzone {
+  border: 2px dashed var(--edge);
+  background: #05070c;
+  padding: 16px 12px;
+  text-align: center;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.dropzone b {
+  font-size: 12px;
+  letter-spacing: 1px;
+  color: var(--ink);
+  word-break: break-all;
+}
+
+.dropzone[data-has="true"] {
+  border-color: var(--grn);
+}
+
+.dropzone[data-has="true"] b {
+  color: var(--grn);
+}
+
+.dropzone[data-over="true"] {
+  border-color: var(--amber);
+  box-shadow: inset 0 0 16px rgba(255, 176, 0, 0.15);
+}
+
+.dropzone:focus-visible {
+  outline: 2px solid var(--amber);
+  outline-offset: 1px;
+}
+
 /* Stage 3: SAM cam-pad, director, reactive stage. */
 
 .campad-frame {

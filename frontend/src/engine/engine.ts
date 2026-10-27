@@ -19,7 +19,12 @@ import {
   type Judgment,
   type ScoreState,
 } from "./judgments";
-import { ChartRenderer, createRenderState, type HitPop } from "./renderer";
+import {
+  ChartRenderer,
+  createRenderState,
+  type HitPop,
+  type ScrollDirection,
+} from "./renderer";
 
 export interface EngineSnapshot {
   songTimeMs: number;
@@ -39,6 +44,8 @@ export class RhythmEngine {
   private readonly audioCtx: AudioContext;
   private master: GainNode | null = null;
   private analyser: AnalyserNode | null = null;
+  /** Live uploaded-song source (Stage 5). Null while the demo synth runs. */
+  private bufferSrc: AudioBufferSourceNode | null = null;
   private spectrum: Uint8Array<ArrayBuffer> = new Uint8Array(0);
   private readonly flashes = createRenderState();
   private chart: Chart;
@@ -74,6 +81,7 @@ export class RhythmEngine {
     this.lastJudgment = null;
     this.flashes.flashes.clear();
     this.flashes.held.clear();
+    this.flashes.pressedAt.clear();
     this.flashes.activeHolds.clear();
     this.flashes.pops.length = 0;
     this.flashes.combo = 0;
@@ -113,8 +121,35 @@ export class RhythmEngine {
   }
 
   start(): void {
-    this.renderer.fitToDisplay();
     this.clock.start(this.chart.offset_ms);
+    this.beginLoop();
+  }
+
+  /**
+   * Stage 5: play a decoded real-audio `AudioBuffer` through the same
+   * master bus + FFT analyser the synth uses, and lock `songTimeMs()` to
+   * the exact playback offset. The source and the clock share one `t0`,
+   * so AV sync stays on the audio hardware clock (<5ms).
+   */
+  startWithBuffer(buf: AudioBuffer): void {
+    this.stopUploadedBuffer();
+    const src = this.audioCtx.createBufferSource();
+    src.buffer = buf;
+    src.connect(this.synthDest());
+    const t0 = this.audioCtx.currentTime + 0.03;
+    src.start(t0);
+    this.bufferSrc = src;
+    this.clock.startAt(t0, this.chart.offset_ms);
+    this.beginLoop();
+  }
+
+  /** True while an uploaded-song buffer is wired into the master bus. */
+  get hasUploadedBuffer(): boolean {
+    return this.bufferSrc !== null;
+  }
+
+  private beginLoop(): void {
+    this.renderer.fitToDisplay();
     this.running = true;
     window.addEventListener("keydown", this.onKeyDown);
     window.addEventListener("keyup", this.onKeyUp);
@@ -128,12 +163,30 @@ export class RhythmEngine {
     this.rafId = requestAnimationFrame(tick);
   }
 
+  private stopUploadedBuffer(): void {
+    if (this.bufferSrc === null) {
+      return;
+    }
+    try {
+      this.bufferSrc.stop();
+    } catch {
+      // Already finished playing; ignore.
+    }
+    try {
+      this.bufferSrc.disconnect();
+    } catch {
+      // Node already torn down with the AudioContext; ignore.
+    }
+    this.bufferSrc = null;
+  }
+
   destroy(): void {
     this.running = false;
     cancelAnimationFrame(this.rafId);
     this.clock.stop();
     window.removeEventListener("keydown", this.onKeyDown);
     window.removeEventListener("keyup", this.onKeyUp);
+    this.stopUploadedBuffer();
     try {
       this.analyser?.disconnect();
       this.master?.disconnect();
@@ -172,6 +225,11 @@ export class RhythmEngine {
     this.renderer.scrollSpeed = speed;
   }
 
+  /** 1-click UP/DOWN scroll toggle: receptors top (up) or bottom (down). */
+  setScrollDirection(dir: ScrollDirection): void {
+    this.renderer.scrollDir = dir;
+  }
+
   /** SAM Cam-Pad Overdrive pose: doubles judged points while true. */
   setOverdrive(active: boolean): void {
     this.overdrive = active;
@@ -203,6 +261,7 @@ export class RhythmEngine {
       return;
     }
     this.flashes.held.add(mapKey);
+    this.flashes.pressedAt.set(mapKey, this.clock.songTimeMs());
     this.pressAt(mapKey, this.clock.songTimeMs());
   }
 

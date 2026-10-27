@@ -5,7 +5,9 @@ import {
   columnAtPoint,
   createRenderState,
   type NoteMark,
+  type ScrollDirection,
 } from "../engine/renderer";
+import { ensureAtlas } from "../engine/spriteAtlas";
 import { playDemoTrack, type DemoTrack } from "../engine/synth";
 import { isManiaChart, PUMP_PADS, type Chart, type ManiaLane, type PumpPad } from "../types/chart";
 
@@ -13,7 +15,11 @@ interface HighwayCanvasProps {
   chart: Chart;
   playing: boolean;
   speed: number;
+  /** 1-click UP/DOWN scroll direction (receptors top vs bottom). */
+  scrollDir: ScrollDirection;
   audioOn: boolean;
+  /** Object URL of an uploaded real-audio file (Stage 5). Null = demo synth. */
+  audioUrl: string | null;
   engineRef: React.MutableRefObject<RhythmEngine | null>;
   onSnapshot: (snap: EngineSnapshot) => void;
   /** Stage 4 EDIT mode: static paused view at cursorMs, never the engine. */
@@ -38,11 +44,24 @@ export function columnAtX(clientX: number, rectWidth: number, cols: number): num
  * the parent on a 100ms poll. EDIT mode paints a static paused frame (engine
  * untouched) with validator markers.
  */
+/**
+ * Adopt a static `/assets/atlas.png` + `.json` sheet when the cabinet
+ * ships one (same UV key contract); otherwise the procedural bake
+ * stands in. Runs once per mount, never blocks the first frame.
+ */
+export function useStaticAtlas(baseUrl = "/assets/atlas"): void {
+  useEffect(() => {
+    void ensureAtlas(baseUrl);
+  }, [baseUrl]);
+}
+
 export function HighwayCanvas({
   chart,
   playing,
   speed,
+  scrollDir,
   audioOn,
+  audioUrl,
   engineRef,
   onSnapshot,
   editing,
@@ -54,6 +73,9 @@ export function HighwayCanvas({
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const snapRef = useRef(onSnapshot);
   snapRef.current = onSnapshot;
+  // Live static-sheet support: adopts /assets/atlas.png + .json when the
+  // cabinet ships them (one benign 404 probe otherwise), else the bake.
+  useStaticAtlas();
 
   useEffect(() => {
     if (!playing) {
@@ -73,12 +95,44 @@ export function HighwayCanvas({
     const ctx = new Ctor();
     const engine = new RhythmEngine(canvas, ctx, chart);
     engine.setScrollSpeed(speed);
+    engine.setScrollDirection(scrollDir);
     engineRef.current = engine;
-    engine.start();
-    const bars = Math.max(1, Math.round(chart.duration_ms / ((60 / chart.bpm) * 4000)));
-    const track: DemoTrack | null = audioOn
-      ? playDemoTrack(ctx, chart.bpm, bars, engine.synthDest(), chart.vocal_phrases ?? [])
-      : null;
+    let cancelled = false;
+    let track: DemoTrack | null = null;
+    const useBuffer = audioUrl !== null && audioOn;
+    if (useBuffer) {
+      // Stage 5: decode the real upload on the playback context and lock
+      // the clock to the exact buffer offset. Synth stays off for uploads.
+      void (async () => {
+        try {
+          const res = await fetch(audioUrl);
+          const bytes = await res.arrayBuffer();
+          const buf = await ctx.decodeAudioData(bytes);
+          if (!cancelled) {
+            engine.startWithBuffer(buf);
+          }
+        } catch {
+          // Corrupt download or undecodable bytes: fall back to the synth
+          // groove so the chart stays playable.
+          if (!cancelled) {
+            engine.start();
+            track = playDemoTrack(
+              ctx,
+              chart.bpm,
+              Math.max(1, Math.round(chart.duration_ms / ((60 / chart.bpm) * 4000))),
+              engine.synthDest(),
+              chart.vocal_phrases ?? [],
+            );
+          }
+        }
+      })();
+    } else {
+      engine.start();
+      const bars = Math.max(1, Math.round(chart.duration_ms / ((60 / chart.bpm) * 4000)));
+      track = audioOn
+        ? playDemoTrack(ctx, chart.bpm, bars, engine.synthDest(), chart.vocal_phrases ?? [])
+        : null;
+    }
     const poll = window.setInterval(() => {
       snapRef.current(engine.snapshot());
     }, 100);
@@ -88,6 +142,7 @@ export function HighwayCanvas({
     };
     window.addEventListener("resize", onResize);
     return () => {
+      cancelled = true;
       window.clearInterval(poll);
       window.removeEventListener("resize", onResize);
       track?.stop();
@@ -100,11 +155,15 @@ export function HighwayCanvas({
     // Rebuild the take whenever chart/play state changes. Speed applies live
     // below without restarting the song.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [chart, playing]);
+  }, [chart, playing, audioUrl]);
 
   useEffect(() => {
     engineRef.current?.setScrollSpeed(speed);
   }, [engineRef, speed]);
+
+  useEffect(() => {
+    engineRef.current?.setScrollDirection(scrollDir);
+  }, [engineRef, scrollDir]);
 
   // Idle / EDIT preview: when not playing, paint one static frame for the
   // loaded chart so a chart/mode switch never leaves a stale frame behind.
@@ -121,6 +180,7 @@ export function HighwayCanvas({
     const preview = new ChartRenderer(canvas);
     preview.fitToDisplay();
     preview.scrollSpeed = speed;
+    preview.scrollDir = scrollDir;
     preview.render(
       chart,
       editing ? cursorMs : chart.offset_ms,
@@ -139,17 +199,26 @@ export function HighwayCanvas({
         ctx2d.setLineDash([14, 10]);
         ctx2d.strokeRect(4, 4, W - 8, H - 8);
         ctx2d.setLineDash([]);
-        // Top-center: clear of the corner HUD plates and the vocal ribbon.
+        // Mid-highway pill: clear of the UP/DOWN receptor rails and the
+        // top vocal-ribbon cabinet stack.
         const cssW = canvas.clientWidth > 0 ? canvas.clientWidth : W;
         const dpr = W / cssW;
-        ctx2d.fillStyle = "#ffb000";
+        const label = `EDIT @ ${cursorMs}ms`;
         ctx2d.font = `bold ${Math.max(14, W / 40)}px ui-monospace, monospace`;
         ctx2d.textAlign = "center";
-        ctx2d.fillText(`EDIT @ ${cursorMs}ms`, W / 2, 228 * dpr);
+        const tw = ctx2d.measureText(label).width + 28 * dpr;
+        const ly = 300 * dpr;
+        ctx2d.fillStyle = "rgba(4,6,13,0.82)";
+        ctx2d.fillRect(W / 2 - tw / 2, ly - 24 * dpr, tw, 32 * dpr);
+        ctx2d.strokeStyle = "#ffb000";
+        ctx2d.lineWidth = 2;
+        ctx2d.strokeRect(W / 2 - tw / 2, ly - 24 * dpr, tw, 32 * dpr);
+        ctx2d.fillStyle = "#ffb000";
+        ctx2d.fillText(label, W / 2, ly);
         ctx2d.restore();
       }
     }
-  }, [chart, playing, speed, editing, cursorMs, marks]);
+  }, [chart, playing, speed, scrollDir, editing, cursorMs, marks]);
 
   const cols = isManiaChart(chart) ? 4 : 5;
 

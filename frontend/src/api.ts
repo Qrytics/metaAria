@@ -138,6 +138,40 @@ export interface StageArtResult {
   model: string;
 }
 
+/* Stage 5: real audio/video ingest -> verified chart + telemetry. */
+
+export interface IngestTelemetry {
+  dsp_ms: number;
+  transcribe_ms: number;
+  sam_ms: number;
+  draft_ms: number;
+  critic_ms: number;
+}
+
+export interface IngestResult {
+  chart: Chart;
+  report: CriticReport;
+  attempts: number;
+  bpm: number;
+  duration_ms: number;
+  onset_times_ms: number[];
+  motion_peaks_ms: number[];
+  art: StageArtResult;
+  telemetry: IngestTelemetry;
+  mock: Record<string, boolean>;
+}
+
+/** Upload a real song (+optional clip); the backend runs the 5-stage pipeline. */
+export async function ingestTrack(form: FormData): Promise<IngestResult> {
+  const res = await fetch("/charts/ingest", { method: "POST", body: form });
+  if (!res.ok) {
+    throw new Error(
+      `/charts/ingest -> ${res.status}: ${(await res.text()).slice(0, 200)}`,
+    );
+  }
+  return (await res.json()) as IngestResult;
+}
+
 /** Generate the song jacket + beat-reactive stage background layer. */
 export function generateStageArt(
   title: string,

@@ -21,10 +21,19 @@ export class MasterClock {
 
   /** Anchor time zero to "now" on the audio clock. Call on (re)start. */
   start(offsetMs = 0): void {
+    this.startAt(this.ctx.currentTime, offsetMs);
+  }
+
+  /**
+   * Anchor time zero to an explicit audio-clock timestamp. Stage 5 uses
+   * this so `songTimeMs()` equals the exact `AudioBufferSourceNode`
+   * playback offset: the source and the clock share the same `t0`.
+   */
+  startAt(ctxTime: number, offsetMs = 0): void {
     // Resume a suspended context so currentTime actually advances.
     void this.ctx.resume();
     this.offsetMs = offsetMs;
-    this.startCtxTime = this.ctx.currentTime;
+    this.startCtxTime = ctxTime;
     this.running = true;
   }
 
