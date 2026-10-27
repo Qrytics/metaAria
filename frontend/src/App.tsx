@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { validateChart, type StageArtResult } from "./api";
+import { validateChart, voiceRemix, type StageArtResult } from "./api";
 import { CamPadOverlay } from "./components/CamPadOverlay";
+import { ChartEditor } from "./components/ChartEditor";
 import { DirectorPanel } from "./components/DirectorPanel";
 import { HighwayCanvas } from "./components/HighwayCanvas";
+import { ResultsPanel } from "./components/ResultsPanel";
 import {
   VocalHighway,
   type VocalPitchSource,
@@ -15,7 +17,31 @@ import { CriticInspector } from "./components/CriticInspector";
 import { RhythmEngine, type EngineSnapshot } from "./engine/engine";
 import { maniaSample, pumpBrokenQZ, pumpSample } from "./engine/charts";
 import { onsetGrid } from "./footpath";
-import type { Chart, ChartMode, CriticReport } from "./types/chart";
+import {
+  buildMarkers,
+  doubleDensity,
+  editStorageKey,
+  emptyHistory,
+  exportPack,
+  halveDensity,
+  importPack,
+  mirrorChart,
+  nearestGridTime,
+  pushHistory,
+  redoHistory,
+  toggleNoteAt,
+  undoHistory,
+  REPAIR_COMMAND,
+  type EditHistory,
+} from "./engine/studio";
+import type { NoteMark } from "./engine/renderer";
+import type {
+  Chart,
+  ChartMode,
+  CriticReport,
+  ManiaLane,
+  PumpPad,
+} from "./types/chart";
 import "./studio.css";
 
 const LIB: Record<string, Chart> = {
@@ -40,6 +66,18 @@ export function App(): React.JSX.Element {
   const [micError, setMicError] = useState<string | null>(null);
   const [vocalStats, setVocalStats] = useState<VocalStats | null>(null);
   const [runId, setRunId] = useState(0);
+  // Stage 4: paused chart studio (PLAY and EDIT never overlap).
+  const [editing, setEditing] = useState(false);
+  const [cursorMs, setCursorMs] = useState(0);
+  const [markers, setMarkers] = useState<Map<number, NoteMark[]>>(new Map());
+  const [repairBusy, setRepairBusy] = useState(false);
+  const [repairError, setRepairError] = useState<string | null>(null);
+  const [repairLog, setRepairLog] = useState<string[] | null>(null);
+  const [showResults, setShowResults] = useState(false);
+  const [dirty, setDirty] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
+  const [histLen, setHistLen] = useState({ undo: 0, redo: 0 });
+  const historyRef = useRef<EditHistory<Chart>>(emptyHistory());
   const micRef = useRef<LivePitchDetector | null>(null);
 
   // Same AudioContext master clock the pad highway reads — one clock, no drift.
@@ -83,6 +121,23 @@ export function App(): React.JSX.Element {
     [chart.bpm, chart.duration_ms],
   );
 
+  // Autosave edited charts; stock reload restores them via loadChart.
+  useEffect(() => {
+    if (!dirty) {
+      return;
+    }
+    try {
+      localStorage.setItem(
+        editStorageKey(chartKey),
+        JSON.stringify(exportPack(chart, grid)),
+      );
+    } catch {
+      // Quota or private mode: edits stay in memory for this session.
+    }
+  }, [dirty, chart, chartKey, grid]);
+
+  const canRevert = dirty && LIB[chartKey] !== undefined;
+
   const loadChart = (key: string): void => {
     const next = LIB[key];
     if (next === undefined) {
@@ -90,12 +145,35 @@ export function App(): React.JSX.Element {
     }
     setPlaying(false);
     setChartKey(key);
-    setChart(next);
+    // Restore autosaved edits for stock charts only.
+    let restored: Chart | null = null;
+    try {
+      const raw = localStorage.getItem(editStorageKey(key));
+      if (raw !== null) {
+        const parsed = importPack(JSON.parse(raw) as unknown);
+        if (parsed.chart.mode === next.mode) {
+          restored = parsed.chart;
+        }
+      }
+    } catch {
+      restored = null;
+    }
+    setChart(restored ?? structuredClone(next));
+    setDirty(restored !== null);
     setSnap(null);
     setReport(null);
     setError(null);
     setVocalStats(null);
     setStageArt(null);
+    setEditing(false);
+    setCursorMs(0);
+    setMarkers(new Map());
+    setRepairLog(null);
+    setRepairError(null);
+    setShowResults(false);
+    setImportError(null);
+    historyRef.current = emptyHistory();
+    setHistLen({ undo: 0, redo: 0 });
   };
 
   const runValidator = async (): Promise<void> => {
@@ -104,6 +182,7 @@ export function App(): React.JSX.Element {
     try {
       const res = await validateChart(chart, grid);
       setReport(res);
+      setMarkers(buildMarkers(chart, res));
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -117,12 +196,189 @@ export function App(): React.JSX.Element {
     setChart(next);
     setSnap(null);
     setReport(rep);
+    setEditing(false);
+    setMarkers(new Map());
+    setRepairLog(null);
+    setDirty(false);
+    setShowResults(false);
+    historyRef.current = emptyHistory();
+    setHistLen({ undo: 0, redo: 0 });
   };
 
   const replay = (): void => {
     setSnap(null);
+    setShowResults(false);
     setRunId((i) => i + 1);
     setPlaying(true);
+  };
+
+  /* Stage 4 edit ops: all paused-only, all immutable chart swaps. */
+  const activeEdit = editing && !playing;
+
+  const commitEdit = (next: Chart): void => {
+    historyRef.current = pushHistory(
+      historyRef.current,
+      structuredClone(chart),
+    );
+    setHistLen({ undo: historyRef.current.past.length, redo: 0 });
+    setChart(next);
+    setDirty(true);
+    setMarkers(new Map());
+  };
+
+  const toggleEdit = (): void => {
+    if (editing) {
+      setEditing(false);
+      return;
+    }
+    setPlaying(false);
+    setCursorMs(grid[0] ?? 0);
+    setEditing(true);
+  };
+
+  const scrub = (step: number): void => {
+    if (grid.length === 0) {
+      return;
+    }
+    let best = 0;
+    let bestAbs = Number.POSITIVE_INFINITY;
+    grid.forEach((g, i) => {
+      const d = Math.abs(g - cursorMs);
+      if (d < bestAbs) {
+        bestAbs = d;
+        best = i;
+      }
+    });
+    const next = Math.min(grid.length - 1, Math.max(0, best + step));
+    setCursorMs(grid[next] ?? cursorMs);
+  };
+
+  const toggleEditKey = (key: ManiaLane | PumpPad): void => {
+    if (!activeEdit) {
+      return;
+    }
+    commitEdit(toggleNoteAt(chart, cursorMs, key));
+  };
+
+  const doUndo = (): void => {
+    const { history, value } = undoHistory(
+      historyRef.current,
+      structuredClone(chart),
+    );
+    if (value === null) {
+      return;
+    }
+    historyRef.current = history;
+    setHistLen({ undo: history.past.length, redo: history.future.length });
+    setChart(value);
+    setDirty(true);
+    setMarkers(new Map());
+  };
+
+  const doRedo = (): void => {
+    const { history, value } = redoHistory(
+      historyRef.current,
+      structuredClone(chart),
+    );
+    if (value === null) {
+      return;
+    }
+    historyRef.current = history;
+    setHistLen({ undo: history.past.length, redo: history.future.length });
+    setChart(value);
+    setDirty(true);
+    setMarkers(new Map());
+  };
+
+  const runRepair = async (): Promise<void> => {
+    if (!activeEdit || repairBusy) {
+      return;
+    }
+    setRepairBusy(true);
+    setRepairError(null);
+    try {
+      const res = await voiceRemix(chart, grid, REPAIR_COMMAND);
+      historyRef.current = pushHistory(
+        historyRef.current,
+        structuredClone(chart),
+      );
+      setHistLen({ undo: historyRef.current.past.length, redo: 0 });
+      setChart(res.chart);
+      setReport(res.report);
+      setRepairLog(res.diff_log);
+      setMarkers(buildMarkers(res.chart, res.report));
+      setDirty(true);
+    } catch (e) {
+      setRepairError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setRepairBusy(false);
+    }
+  };
+
+  const revertStock = (): void => {
+    const stock = LIB[chartKey];
+    if (stock === undefined) {
+      return;
+    }
+    setChart(structuredClone(stock));
+    setDirty(false);
+    setMarkers(new Map());
+    setRepairLog(null);
+    setReport(null);
+    historyRef.current = emptyHistory();
+    setHistLen({ undo: 0, redo: 0 });
+    try {
+      localStorage.removeItem(editStorageKey(chartKey));
+    } catch {
+      // Storage unavailable: in-memory state is already clean.
+    }
+  };
+
+  const exportPackFile = (): void => {
+    const blob = new Blob([JSON.stringify(exportPack(chart, grid), null, 2)], {
+      type: "application/json",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${chart.title.replace(/[^a-z0-9]+/gi, "-").toLowerCase() || "chart"}.aria.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const importPackFile = (file: File): void => {
+    setImportError(null);
+    file
+      .text()
+      .then((text) => {
+        try {
+          const parsed = importPack(JSON.parse(text) as unknown);
+          historyRef.current = emptyHistory();
+          setHistLen({ undo: 0, redo: 0 });
+          setPlaying(false);
+          setChartKey("imported");
+          setChart(parsed.chart);
+          setDirty(false);
+          setEditing(false);
+          setMarkers(new Map());
+          setReport(null);
+          setRepairLog(null);
+          setShowResults(false);
+          setSnap(null);
+        } catch (e) {
+          setImportError(e instanceof Error ? e.message : String(e));
+        }
+      })
+      .catch((e: unknown) => {
+        setImportError(e instanceof Error ? e.message : String(e));
+      });
+  };
+
+  const handleSnapshot = (snap: EngineSnapshot): void => {
+    setSnap(snap);
+    if (snap.finished) {
+      setShowResults(true);
+    }
   };
 
   const mode: ChartMode = chart.mode;
@@ -131,7 +387,20 @@ export function App(): React.JSX.Element {
   };
 
   return (
-    <div className="studio">
+    <div
+      className="studio"
+      onDragOver={(e) => e.preventDefault()}
+      onDrop={(e) => {
+        e.preventDefault();
+        const f = [...e.dataTransfer.files].find((x) =>
+          x.name.endsWith(".json"),
+        );
+        if (f !== undefined) {
+          setEditing(false);
+          importPackFile(f);
+        }
+      }}
+    >
       <header className="studio-head">
         <h1>ARIA CHARTING STUDIO</h1>
         <span className="sub">HW-DAW // ARCADE CABINET REV A</span>
@@ -183,33 +452,14 @@ export function App(): React.JSX.Element {
               />
             </section>
           )}
-          {snap?.finished === true && playing && (
-            <section className="panel results" aria-label="Chart complete results">
-              <header className="panel-head">CHART COMPLETE</header>
-              <div className="telemetry-grid">
-                <div className="meter">
-                  <span className="meter-label">MAX COMBO</span>
-                  <span className="meter-value t-combo">{snap.score.maxCombo}</span>
-                </div>
-                <div className="meter">
-                  <span className="meter-label">POINTS</span>
-                  <span className="meter-value t-combo">
-                    {Math.round(snap.score.points)}
-                  </span>
-                </div>
-                <div className="meter">
-                  <span className="meter-label">JUDGED</span>
-                  <span className="meter-value">
-                    {snap.judged}/{snap.total}
-                  </span>
-                </div>
-              </div>
-              <div className="transport" style={{ marginTop: 8 }}>
-                <button type="button" className="hw-btn lit" onClick={replay}>
-                  PLAY AGAIN
-                </button>
-              </div>
-            </section>
+          {showResults && (
+            <ResultsPanel
+              snap={snap}
+              vocalAccuracy={vocalStats?.accuracy ?? null}
+              mode={mode}
+              onClose={() => setShowResults(false)}
+              onReplay={replay}
+            />
           )}
           <HighwayCanvas
             key={runId}
@@ -218,7 +468,12 @@ export function App(): React.JSX.Element {
             speed={speed}
             audioOn={audioOn}
             engineRef={engineRef}
-            onSnapshot={setSnap}
+            onSnapshot={handleSnapshot}
+            editing={editing}
+            cursorMs={cursorMs}
+            marks={markers}
+            onLaneClick={toggleEditKey}
+            onWheelScrub={scrub}
           />
           <section className="panel">
             <header className="panel-head">TRANSPORT</header>
@@ -265,6 +520,13 @@ export function App(): React.JSX.Element {
                 }}
               >
                 RESET
+              </button>
+              <button
+                type="button"
+                className="hw-btn"
+                onClick={() => setShowResults((s) => !s)}
+              >
+                RESULTS [TAB]
               </button>
               <label className="switch">
                 <input
@@ -322,6 +584,40 @@ export function App(): React.JSX.Element {
             validating={validating}
             error={error}
             onValidate={() => void runValidator()}
+          />
+          <ChartEditor
+            editing={editing}
+            active={activeEdit}
+            chart={chart}
+            grid={grid}
+            cursorMs={cursorMs}
+            markers={markers}
+            report={report}
+            validating={validating}
+            validateError={error}
+            repairBusy={repairBusy}
+            repairError={repairError}
+            repairLog={repairLog}
+            dirty={dirty}
+            canUndo={histLen.undo > 0}
+            canRedo={histLen.redo > 0}
+            canRevert={canRevert}
+            importError={importError}
+            onToggleEdit={toggleEdit}
+            onScrub={scrub}
+            onToggleKey={toggleEditKey}
+            onMirror={() => activeEdit && commitEdit(mirrorChart(chart))}
+            onHalve={() => activeEdit && commitEdit(halveDensity(chart))}
+            onDouble={() => activeEdit && commitEdit(doubleDensity(chart))}
+            onUndo={doUndo}
+            onRedo={doRedo}
+            onValidate={() => void runValidator()}
+            onRepair={() => void runRepair()}
+            onJumpToViolation={(t) => setCursorMs(nearestGridTime(t, grid))}
+            onExport={exportPackFile}
+            onImportFile={importPackFile}
+            onRevert={revertStock}
+            onToggleResults={() => setShowResults((s) => !s)}
           />
           <CriticInspector onChart={onGenerated} />
           <DirectorPanel

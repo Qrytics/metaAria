@@ -85,8 +85,23 @@ only for the open-weight track.
   Art` pipeline), and Muse Image reactive stage (`POST /stage/generate-art`,
   procedural SVG/cyber-stage fallback in `ENV=dev`). Remixed charts hot-swap
   into the live game engine with the verified chart + critic diff log.
-- **Stage 4 — Studio & Sharing (deferred proposal):** chart studio editor and
-  export/share flows.
+- **Stage 4 — Chart Studio, Inline Validator & Portable Packs (locked scope,
+  in build):** strict `PLAY` vs `EDIT` separation — the step-sequencer,
+  markers, and repair run only while the transport is paused; `PLAY` keeps
+  the untouched `AudioContext.currentTime` render loop and judgment windows.
+  Paused sequencer: `Up/Down` scrub the `onset_grid_ms` (`Shift` = 4x jump),
+  `D/F/J/K` or `Q/E/S/Z/C` (or lane click) toggles a note snapped ±15ms,
+  `M` mirrors L/R (`Q<->E`, `Z<->C`, `0<->3`, `1<->2`), `H`/`2` halve/double
+  density, `Ctrl+Z`/`Ctrl+Y` undo/redo (cap 50). `VALIDATE [V]` renders
+  inline hazard markers (`#ffb000`/`#ef4444` + violation tag) on offending
+  notes; `CRITIC REPAIR [R]` remixes via the existing
+  `/director/voice-remix` fix command and shows the diff log. localStorage
+  autosave keyed by chart + `REVERT TO STOCK`; `EXPORT`/`IMPORT .aria.json`
+  packs (`ChartSchema` + `vocal_phrases` + onset grid + stage meta, validated
+  on import) with drag-drop on the chassis. Bench results readout
+  (`RESULTS [TAB]`): SSS–F grade, accuracy %, max combo, vocal pitch %,
+  per-key `PERFECT/GREAT/GOOD/MISS` breakdown. UI stays in the
+  `studio.css` bench-equipment language; zero new backend endpoints.
 - Interview provenance: target record (root `AGENTS.md`, Option A), docs-only turn with
   no runtime code/commits (Option A), canonical IDs, mandatory caching rule (Option A),
   Q1 game modes accepted as recommended, Q2 data-flow accepted with the two safeguards

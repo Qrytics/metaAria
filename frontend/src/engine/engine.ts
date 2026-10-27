@@ -212,7 +212,7 @@ export class RhythmEngine {
   ): void {
     this.hitFlags[idx] = true;
     this.lastJudgment = judgment;
-    registerJudgment(this.score, judgment, this.overdrive ? 2 : 1);
+    registerJudgment(this.score, judgment, this.overdrive ? 2 : 1, mapKey);
     const hitTimeMs = this.clock.songTimeMs();
     // Flash map is keyed by lane/pad for the renderer.
     this.flashes.flashes.set(mapKey, {
@@ -232,7 +232,7 @@ export class RhythmEngine {
       if (!this.hitFlags[i] && isMissWindowExceeded(now, note.time_ms)) {
         this.hitFlags[i] = true;
         this.lastJudgment = "MISS";
-        registerJudgment(this.score, "MISS");
+        registerJudgment(this.score, "MISS", 1, this.noteKey(note));
         this.flashes.flashes.set(this.noteKey(note), {
           timeMs: now,
           judgment: "MISS",

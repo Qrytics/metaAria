@@ -51,6 +51,10 @@ function laneKey(note: ChartNote): number | string {
   return note.lane ?? note.pad ?? "?";
 }
 
+import type { NoteMark } from "./studio";
+
+export type { NoteMark };
+
 export class ChartRenderer {
   private readonly canvas: HTMLCanvasElement;
   private readonly ctx: CanvasRenderingContext2D;
@@ -123,7 +127,17 @@ export class ChartRenderer {
     return this.canvas.height - 96;
   }
 
-  render(chart: Chart, songTimeMs: number, opts: RenderOptions): void {
+  /**
+   * Render one frame. `marks` is EDIT-mode only: validator violations pinned
+   * to note indices, drawn as high-contrast square brackets + tag. The PLAY
+   * path never passes marks, so its pixels are byte-identical to before.
+   */
+  render(
+    chart: Chart,
+    songTimeMs: number,
+    opts: RenderOptions,
+    marks?: ReadonlyMap<number, NoteMark[]>,
+  ): void {
     const { ctx } = this;
     const W = this.canvas.width;
     const H = this.canvas.height;
@@ -182,6 +196,32 @@ export class ChartRenderer {
       ctx.lineWidth = 3;
       ctx.strokeStyle = "#f8fafc";
       ctx.stroke();
+
+      const mark = marks?.get(noteIndex);
+      if (mark !== undefined && mark.length > 0) {
+        const sev = mark.some((m) => m.severity === "error")
+          ? "#ef4444"
+          : "#ffb000";
+        ctx.strokeStyle = sev;
+        ctx.lineWidth = 3;
+        // Square hazard brackets flanking the offending note.
+        const r = 30;
+        const arm = 10;
+        ctx.beginPath();
+        ctx.moveTo(x - r + arm, y - r);
+        ctx.lineTo(x - r, y - r);
+        ctx.lineTo(x - r, y + r);
+        ctx.lineTo(x - r + arm, y + r);
+        ctx.moveTo(x + r - arm, y - r);
+        ctx.lineTo(x + r, y - r);
+        ctx.lineTo(x + r, y + r);
+        ctx.lineTo(x + r - arm, y + r);
+        ctx.stroke();
+        ctx.fillStyle = sev;
+        ctx.font = "bold 10px ui-monospace, monospace";
+        ctx.textAlign = "center";
+        ctx.fillText(mark[0]!.text.slice(0, 28), x, y - r - 8);
+      }
     });
 
     // Receptors + flashes.

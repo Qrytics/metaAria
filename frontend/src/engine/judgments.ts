@@ -30,15 +30,22 @@ export type JudgmentCounts = Record<Judgment, number>;
 
 export interface ScoreState {
   counts: JudgmentCounts;
+  /** Per-lane/pad judgment counts (key = lane index or pad letter). */
+  byKey: Record<string, JudgmentCounts>;
   combo: number;
   maxCombo: number;
   /** Arcade points. Doubled while Overdrive (2x Star Power) is active. */
   points: number;
 }
 
+function emptyCounts(): JudgmentCounts {
+  return { PERFECT: 0, GREAT: 0, GOOD: 0, MISS: 0 };
+}
+
 export function createScoreState(): ScoreState {
   return {
-    counts: { PERFECT: 0, GREAT: 0, GOOD: 0, MISS: 0 },
+    counts: emptyCounts(),
+    byKey: {},
     combo: 0,
     maxCombo: 0,
     points: 0,
@@ -48,13 +55,23 @@ export function createScoreState(): ScoreState {
 /**
  * Register one judged hit. MISS resets the combo; anything else extends it.
  * `multiplier` is the Overdrive score multiplier (2 while a pose holds it).
+ * `key` (lane index or pad letter) additionally files the judgment under
+ * `byKey` for the Stage 4 results breakdown; totals are unchanged.
  */
 export function registerJudgment(
   state: ScoreState,
   judgment: Judgment,
   multiplier = 1,
+  key?: number | string,
 ): void {
   state.counts[judgment] += 1;
+  if (key !== undefined) {
+    const k = String(key);
+    if (state.byKey[k] === undefined) {
+      state.byKey[k] = emptyCounts();
+    }
+    state.byKey[k]![judgment] += 1;
+  }
   if (judgment === "MISS") {
     state.combo = 0;
     return;

@@ -56,7 +56,7 @@ python -m pytest -q
 Frontend (from `frontend/`):
 
 ```bash
-npm run test       # vitest: engine judgments, vocals, Stage 3 panels
+npm run test       # vitest: judgments, vocals, Stage 3 panels, Stage 4 studio
 npm run typecheck  # strict tsc --noEmit
 ```
 
@@ -121,6 +121,18 @@ Play:
 - [ ] Library loads `pump-5pad` by default. Press play — notes fall, receptors flash, verdict strip updates.
 - [ ] Switch to `mania-4k`. Hit `D F J K` as notes cross the receptors.
 - [ ] Back on pump, hit `Q E S Z C`. Try `Space` to start/stop, speed multiplier, mute.
+- [ ] Finish (or press `RESULTS [TAB]`) — bench readout shows grade, accuracy, max combo, vocal %, per-key P/G/g/M. `PLAY AGAIN` replays.
+
+Chart Studio (paused only — editor is dead during PLAY):
+
+- [ ] Press `EDIT [F2]` — highway gains the amber dashed frame + `EDIT @ ms`. Keys do nothing while playing.
+- [ ] `Up/Down` scrubs the grid (`Shift` = 4x), wheel works on the canvas. Cursor readout tracks `idx/total · ms`.
+- [ ] `D/F/J/K` or `Q/E/S/Z/C` (or clicking a lane) toggles a note at the cursor line; toggle again removes it.
+- [ ] `M` mirrors sides, `H`/`2` halve/double density, `Ctrl+Z`/`Ctrl+Y` undo/redo.
+- [ ] Load `broken`, EDIT, `VALIDATE [V]` — hazard brackets + tags (e.g. `PARITY…`) pin to the offending notes; clicking a marker badge jumps the cursor there.
+- [ ] `CRITIC REPAIR [R]` remixes via the fix command and shows the CRITIC DIFF log; markers rebuild on the repaired chart.
+- [ ] Edit, reload the page, reload the chart — edits persist (autosave). `REVERT TO STOCK` restores the sample.
+- [ ] `EXPORT .ARIA.JSON`, then drag the file onto the chassis (or IMPORT) — chart loads as `imported`. A hand-corrupted JSON is rejected with a reason.
 
 Critic:
 
@@ -154,7 +166,7 @@ Everything above is green or knowingly skipped (mic/camera only):
 
 - [ ] `pytest` green, `npm run test` green, `npm run typecheck` clean.
 - [ ] `/health` ok; `validate` + `generate` return real JSON.
-- [ ] All four studio paths exercised at least in mock form: play, validate, remix, stage art.
+- [ ] All studio paths exercised at least in mock form: play, validate, remix, stage art, plus edit/repair/pack.
 - [ ] `git status --short` shows no surprise files (only intended changes).
 
 If anything is red, note the exact command + error output and fix that layer
